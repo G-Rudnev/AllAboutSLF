@@ -23,7 +23,7 @@ tol = 0.1
 mess = 0.1
 area_tol = 0.0075
 shape = 0
-mode = 'lsm'  # метод аппроксимации
+mode = 'opt_lsm'  # метод аппроксимации
 timing = np.zeros(2, dtype=float)  # значения времени исполнения аппроксимации avg и lsm
 
 fig = plt.figure()
@@ -150,8 +150,6 @@ def createPnts(pnts : np.ndarray, N, d0 = 0.1, shape = 0, mess = 0.1) -> None:
 
 
 
-
-
 # def create_pnts(pnts : np.ndarray, N, mess=0.1, lidar_angle=pi-0.001, lidar_ax=(0.0, 0.0)) -> None:
 #     global act_ostacles
 #     lidar_ax_x = lidar_ax[0]
@@ -237,7 +235,7 @@ def calc_normal(pnt, A1):
     return A2, C2
 
 
-def getLines(lines: np.ndarray, pnts: np.ndarray, Npnts: int, tolerance=0.1, mode='lsm') -> int:
+def getLines(lines: np.ndarray, pnts: np.ndarray, Npnts: int, tolerance=0.1, mode='opt_lsm') -> int:
     """#returns the number of the gotten lines in lines"""
     t0 = time.time()
     global Nlines
@@ -359,15 +357,13 @@ def drawLoad(xlim=(-4, 4), ylim=(-4, 4)):
     # for i in range(N):
     #     ax.plot([lidar_ax[0], pnts[0, i]], [lidar_ax[1], pnts[1, i]], color='cyan', linewidth=0.2)
 
-    # for i in range(Nlines):
-    #     ax.plot([lines[2, i], lines[3, i]], [lines[0, i] * lines[2, i] + lines[1, i], lines[0, i] * lines[3, i] + lines[1, i]], linewidth=1.5) ###########
-
     for i in range(Nlines):
         ax.plot([lines[0, i], lines[0, i+1]], [lines[1, i], lines[1, i+1]], linewidth=2)
 
     ax.axis('scaled')
 
     fig.canvas.draw_idle()
+
 
 def plot_obstacles(ax):
     for i in range(act_ostacles.shape[1]):
@@ -425,16 +421,17 @@ def jitter(event):
     global jit
 
     def foo():
-        # while jit and plt.get_fignums():
-        with mutex:
-            rns = np.zeros([2, N])
-            for i in range(N):
-                if random.rand() > 0.9:
-                    rns[:, i] += 0.5 * random.rand(2) - 0.25
-            pnts[:2, :] = pntsBuf + 0.02 * random.rand(2, N) - 0.01 + rns
-            getLines(lines, pnts, N, tol, mode=mode)
-            drawLoad(ax.get_xlim(), ax.get_ylim())
-            # time.sleep(1)
+        while jit and plt.get_fignums():
+            with mutex:
+                rns = np.zeros([2, N])
+                for i in range(N):
+                    if random.rand() > 0.9:
+                        rns[:, i] += 0.5 * random.rand(2) - 0.25
+                pnts[:2, :] = pntsBuf + 0.02 * random.rand(2, N) - 0.01 + rns
+                # getLines(lines, pnts, N, tol, mode=mode)
+                filter_outliers()
+                drawLoad(ax.get_xlim(), ax.get_ylim())
+            time.sleep(1)
 
     with mutex:
         jit = not jit
@@ -500,9 +497,24 @@ def calc_areas(pnts: np.ndarray, N: int):
     return areas
 
 
-def filter_outliers(event):
+# def filter_outliers(event):
+#     areas = calc_areas(pnts, N)
+#     # plot_areas(areas)
+#     filtered_pnts = np.zeros([2, N], dtype=float)
+#     filtered_pnts[:, 0] = pnts[:2, 0]
+#     valid_pnts_num = 1
+#     for i in range(1, N-1):
+#         if areas[i-1] <= area_tol:
+#             filtered_pnts[:, valid_pnts_num] = pnts[:2, i]
+#             valid_pnts_num += 1
+#     filtered_pnts[:, valid_pnts_num] = pnts[:2, -1]
+#     valid_pnts_num += 1
+#     getLines(lines, filtered_pnts[:, :valid_pnts_num], valid_pnts_num, tolerance=tol, mode=mode)
+#     draw_filtered(filtered_pnts[:, :valid_pnts_num])
+
+
+def filter_outliers():
     areas = calc_areas(pnts, N)
-    # plot_areas(areas)
     filtered_pnts = np.zeros([2, N], dtype=float)
     filtered_pnts[:, 0] = pnts[:2, 0]
     valid_pnts_num = 1
@@ -513,42 +525,38 @@ def filter_outliers(event):
     filtered_pnts[:, valid_pnts_num] = pnts[:2, -1]
     valid_pnts_num += 1
     getLines(lines, filtered_pnts[:, :valid_pnts_num], valid_pnts_num, tolerance=tol, mode=mode)
-    draw_filtered(filtered_pnts[:, :valid_pnts_num])
 
 
-def draw_filtered(filtered_pnts, xlim=(-4, 4), ylim=(-4, 4)):
+# def draw_filtered(filtered_pnts, xlim=(-4, 4), ylim=(-4, 4)):
+#     res_fig, res_ax = plt.subplots()
+#     res_ax.cla()
+#
+#     res_ax.set(xlim=xlim, ylim=ylim)
+#     res_ax.set_aspect('equal')
+#     # ax.scatter(0, 0, color='black')
+#     res_ax.scatter(filtered_pnts[0, 0], filtered_pnts[1, 0], s=10, marker='o', color='red')
+#     res_ax.scatter(filtered_pnts[0, 1:], filtered_pnts[1, 1:], s=10, marker='o', color='gray')
+#     res_ax.set(title='filtered')
+#
+#     # plot_obstacles(ax)
+#
+#     # for i in range(N):
+#     #     ax.plot([lidar_ax[0], pnts[0, i]], [lidar_ax[1], pnts[1, i]], color='cyan', linewidth=0.2)
+#
+#     # for i in range(Nlines):
+#     #     ax.plot([lines[2, i], lines[3, i]], [lines[0, i] * lines[2, i] + lines[1, i], lines[0, i] * lines[3, i] + lines[1, i]], linewidth=1.5) ###########
+#
+#     for i in range(Nlines):
+#         res_ax.plot([lines[0, i], lines[0, i+1]], [lines[1, i], lines[1, i+1]], linewidth=2)
+#
+#     res_ax.axis('scaled')
+#
+#     res_fig.show()
 
-    res_fig, res_ax = plt.subplots()
-    res_ax.cla()
 
-    res_ax.set(xlim=xlim, ylim=ylim)
-    res_ax.set_aspect('equal')
-    # ax.scatter(0, 0, color='black')
-    res_ax.scatter(filtered_pnts[0, 0], filtered_pnts[1, 0], s=10, marker='o', color='red')
-    res_ax.scatter(filtered_pnts[0, 1:], filtered_pnts[1, 1:], s=10, marker='o', color='gray')
-    res_ax.set(title='filtered')
-
-    # plot_obstacles(ax)
-
-    # for i in range(N):
-    #     ax.plot([lidar_ax[0], pnts[0, i]], [lidar_ax[1], pnts[1, i]], color='cyan', linewidth=0.2)
-
-    # for i in range(Nlines):
-    #     ax.plot([lines[2, i], lines[3, i]], [lines[0, i] * lines[2, i] + lines[1, i], lines[0, i] * lines[3, i] + lines[1, i]], linewidth=1.5) ###########
-
-    for i in range(Nlines):
-        res_ax.plot([lines[0, i], lines[0, i+1]], [lines[1, i], lines[1, i+1]], linewidth=2)
-
-    res_ax.axis('scaled')
-
-    res_fig.show()
-
-
-def update_filtration(val):
+def update_filtration_tol(val):
     global area_tol
     area_tol = val
-    # with mutex:
-    #     filter_outliers(None)
 
 
 def main():
@@ -567,8 +575,8 @@ def main():
     ax5 = plt.axes([0.55, 0.42, 0.1, 0.04])
     ax6 = plt.axes([0.55, 0.49, 0.1, 0.04])
     ax7 = plt.axes([0.55, 0.6, 0.1, 0.1])
-    ax8 = plt.axes([0.55, 0.77, 0.1, 0.04])
-    ax9 = plt.axes([0.15, 0.11, 0.45, 0.03])
+    # ax8 = plt.axes([0.55, 0.77, 0.1, 0.04])
+    ax8 = plt.axes([0.15, 0.11, 0.45, 0.03])
 
     sz1 = Slider(ax1, 'tolerance', 0.0, 0.8, tol, valstep=0.02)
     sz1.on_changed(updateLinesTolerance)
@@ -576,8 +584,8 @@ def main():
     sz2 = Slider(ax2, 'mess', 0.0, 1.0, mess, valstep=0.02)
     sz2.on_changed(updatePnts)
 
-    sz3 = Slider(ax9, 'area', 0.0, 0.01, area_tol, valstep=0.0005)
-    sz3.on_changed(update_filtration)
+    sz3 = Slider(ax8, 'area', 0.0, 0.01, area_tol, valstep=0.0005)
+    sz3.on_changed(update_filtration_tol)
 
     btn1 = Button(ax3, 'Jitter', hovercolor='0.975')
     btn1.on_clicked(jitter)
@@ -594,8 +602,8 @@ def main():
     btn5 = Button(ax7, 'Start\ntest', hovercolor='0.975')
     btn5.on_clicked(plot_timing_cumsum)
 
-    btn6 = Button(ax8, 'Filter', hovercolor='0.975')
-    btn6.on_clicked(filter_outliers)
+    # btn6 = Button(ax8, 'Filter', hovercolor='0.975')
+    # # btn6.on_clicked(filter_outliers)
 
     plt.show()
 
