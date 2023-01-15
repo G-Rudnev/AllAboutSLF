@@ -1,5 +1,14 @@
-import math as m
+import math
+from math import inf as inf
+from math import pi as pi
+from math import tan as tan
+from math import sin as sin
+from math import cos as cos
+from math import atan as atan
+from math import atan2 as atan2
+
 import numpy as np
+from numpy.linalg import norm as norm 
 import numpy.random as random
 
 import threading
@@ -9,12 +18,18 @@ import matplotlib.pyplot as plt
 from matplotlib.widgets import Slider, Button
 
 N = 50
-Nlines = 0
-pnts = np.zeros([3, N])
-pntsBuf = np.zeros([2, N])
-lines = np.zeros([4, N - 1])
 
+pnts = np.zeros([3, N])
+pntsBuf = []
+
+Nlines = 0
+lines = np.zeros([3, N])
+lines[2, :] = 1.0
+
+cont = 0.5
+half_dphi = 0.03
 tol = 0.1
+
 mess = 0.1
 shape = 0
 
@@ -23,31 +38,236 @@ ax = plt.axes([0.07, 0.25, 0.45, 0.7])
 
 mutex = threading.RLock()
 
-def lineApproxAveraging(pnts : np.ndarray, fr : int, to : int):
+class Line():
 
-    b0 = np.exp(np.linspace(-0.25, 1 - 0.25, (to - fr))**2 / -0.03)
-    # b0 = np.linspace(1.0, 0.0, N)**2.0
-    b0 /= np.sum(b0)
+    def LMS(X : np.ndarray, Y : np.ndarray, N : int, x_sum, y_sum, xx_sum, yy_sum, xy_sum):
+        """sums are of: x, y, xx, yy, xy.\n
+        X and Y must have the same length, numpy exception will be thrown if not"""
 
-    b1 = np.flip(b0)
+        phi = xy_sum - x_sum * y_sum / N
 
-    pnt0 = [np.sum(b0 * pnts[0, fr : to]), np.sum(b0 * pnts[1, fr : to])]
-    pnt1 = [np.sum(b1 * pnts[0, fr : to]), np.sum(b1 * pnts[1, fr : to])]
+        if abs(phi) > 0.0001:
+            # Вычисление A для минимумов функции потерь
+            theta = (yy_sum - xx_sum) / phi + (x_sum ** 2 - y_sum ** 2) / N / phi
+            D = theta ** 2 + 4.0  # дискриминант
+            A1 = (theta + math.sqrt(D)) / 2.0
+            A2 = (theta - math.sqrt(D)) / 2.0
+            # Вычисление С для минимумов функции потерь
+            C1 = (y_sum - x_sum * A1) / N
+            C2 = (y_sum - x_sum * A2) / N
+            # Подстановка в функцию потерь, выявление лучшего
 
-    a = (pnt1[1] - pnt0[1]) / (pnt1[0] - pnt0[0])
-    b = pnt0[1] - a * pnt0[0]
-    return (a, b, np.mean((a * pnts[0, fr : to] - pnts[1, fr : to] + b)**2) / (b**2 + 1))
+            distsSum1 = np.sum(np.abs(X[:N] * A1 - Y[:N] + C1)) / math.sqrt(A1 ** 2 + 1.0)
+            distsSum2 = np.sum(np.abs(X[:N] * A2 - Y[:N] + C2)) / math.sqrt(A2 ** 2 + 1.0)
+        else:
+            A1 = math.inf  #вертикальная прямая
+            A2 = 0.0    #горизонтальная прямая
 
-def lineApproxLMS(pnts : np.ndarray, fr : int, to : int):
-    #LMS
-    a = 0
-    b = 0
-    return (a, b, 0)
+            C1 = x_sum / N    #вообще говоря, должен быть с минусом
+            C2 = y_sum / N
+            
+            distsSum1 = np.sum(np.abs(X[:N] - C1))
+            distsSum2 = np.sum(np.abs(Y[:N] - C2))
+
+        # Выбор наименьшего значения функции потерь, возврат соответствующих ему параметров А и С
+        if distsSum1 < distsSum2:
+            return A1, C1, distsSum1 / N
+        else:
+            return A2, C2, distsSum2 / N
+
+    def __init__(self, qOk = 0.005):
+        self.line = np.zeros([2])
+        """A and C"""
+
+        self.isGap = True
+        self.isSingle = False
+
+        self.qOk = qOk
+        self._q = qOk
+
+        self._sums = ()
+
+    def copy(self):
+        line = Line()
+        line.line[0], line.line[1], line.isGap, line.isSingle, line.qOk, line._q = \
+            self.line[0], self.line[1], self.isGap, self.isSingle, self.qOk, self._q
+        line._sums = self._sums #immutable
+        return line
+
+    def set_as_tangent_with_1_pnt(self, p : np.ndarray):
+        if p[1] != 0.0:
+            self.line[0] = -p[0] / p[1]
+            self.line[1] = (p[0] * p[0] + p[1] * p[1]) / p[1]
+        else:
+            self.line[0] = math.inf
+            self.line[1] = p[0]
+        self.isSingle = True
+
+    def set_with_2_pnts(self, p1 : np.ndarray, p2 : np.ndarray):
+        dx = p2[0] - p1[0]
+        if dx != 0.0:
+            self.line[0] = (p2[1] - p1[1]) / dx
+            self.line[1] = p1[1] - self.line[0] * p1[0]
+        else:
+            self.line[0] = math.inf
+            self.line[1] = p1[0] #без минуса удобнее
+        self.isSingle = False
+
+    def set_best_with_LMS(self, pnts : np.ndarray):
+        """Движемся по одной точке назад до первого увеличения q (функции ошибки) или до в целом норм вписывания.\n
+        Возвращает смещение с конца (<=0 !!!) до последней точки, взятой в прямую."""
+        N = pnts.shape[1]
+
+        X = pnts[0, :]
+        Y = pnts[1, :]
+
+        sums = np.sum(X), np.sum(Y), np.dot(X, X), np.dot(Y, Y), np.dot(X, Y)
+
+        self.line[0], self.line[1], self._q = Line.LMS(X, Y, N, *sums)
+
+        shift = 0
+        while self._q >= self.qOk:
+            shift -= 1
+            sums = sums[0] - X[shift],  sums[1] - Y[shift],  sums[2] - X[shift] * X[shift],  sums[3] - Y[shift] * Y[shift],  sums[4] - X[shift] * Y[shift]
+            A, B, q = Line.LMS(X, Y, N + shift, *sums)
+            if (q > self._q):
+                shift += 1
+                break
+            else:
+                self.line[0], self.line[1], self._q = A, B, q
+
+        self.isSingle = False
+        return shift
+
+    def get_distance_to_pnt(self, p : np.ndarray, signed = False):
+        if signed:
+            if not math.isinf(self.line[0]):
+                return (self.line[0] * p[0] - p[1] + self.line[1]) / math.sqrt(self.line[0] ** 2 + 1)
+            else:
+                return (p[0] - self.line[1])
+        else:
+            if not math.isinf(self.line[0]):
+                return abs(self.line[0] * p[0] - p[1] + self.line[1]) / math.sqrt(self.line[0] ** 2 + 1)
+            else:
+                return abs(p[0] - self.line[1])
+
+    def get_projection_of_pnt(self, p : np.ndarray, pout : np.ndarray):
+        if not math.isinf(self.line[0]):
+            pout[0] = (p[0] + self.line[0] * p[1] - self.line[0] * self.line[1]) / (self.line[0] ** 2 + 1.0)
+            pout[1] = self.line[0] * pout[0] + self.line[1]
+        else:
+            pout[0], pout[1] = self.line[1], p[1]
+
+    def get_projection_of_pnt_Ex(self, p : np.ndarray, pout : np.ndarray, half_dphi, direction):
+        """Для линий, построенных по одной точке (self.isSingle = True) и считающихся касательными, находит точку,
+        отстоящую влево или вправо (direction = True или False, соответственно) от точки касания на угол half_dphi"""
+        if (not self.isSingle):
+            if (not math.isinf(self.line[0])):
+                pout[0] = (p[0] + self.line[0] * p[1] - self.line[0] * self.line[1]) / (self.line[0] ** 2 + 1.0)
+                pout[1] = self.line[0] * pout[0] + self.line[1]
+            else:
+                pout[0], pout[1] = self.line[1], p[1]
+        else:
+            l = norm(p[:2]) * tan(half_dphi) #находим точку на линии, отстоящую вправо от точки касания на угол half_dphi
+            alpha = atan(self.line[0])
+            if (direction):
+                pout[0], pout[1] = p[0] + l * cos(alpha), p[1] + l * sin(alpha)
+            else:
+                pout[0], pout[1] = p[0] - l * cos(alpha), p[1] - l * sin(alpha)
+    
+    def get_intersection(self, line, pout : np.ndarray):
+        if (self.line[0] == line.line[0]):
+            pout[0], pout[1] = math.inf, math.inf #прямые параллельны, в т.ч. и если обе вертикальные
+        else:
+            if math.isinf(self.line[0]):
+                pout[0], pout[1] = self.line[1], line.line[0] * self.line[1] + line.line[1] #вертикальная исходная
+            elif math.isinf(line.line[0]):
+                pout[0], pout[1] = line.line[1], self.line[0] * line.line[1] + self.line[1] #вертикальная подставляемая
+            else:
+                pout[0] = (line.line[1] - self.line[1]) / (self.line[0] - line.line[0])
+                pout[1] = self.line[0] * pout[0] + self.line[1]
+
+def getLines(lines : np.ndarray, pnts : np.ndarray, Npnts : int, continuity : float, half_dphi : float, tolerance : float) -> int:
+    """#returns the number of the gotten points in lines"""
+
+    half_dphi *= 0.0174532925199432957692369
+
+    fr = 0
+    to = 0
+    Nlines = 0
+
+    line = Line()
+    prev_line = Line()
+
+    while fr < Npnts:
+
+        if (pnts[0, fr] == 0.0 and pnts[1, fr] == 0.0):
+            line.isGap = True   #не очень консистентно, но самую-самую малость быстрее
+            to = fr + 1
+            while (to < Npnts) and (pnts[0, to] == 0.0 and pnts[1, to] == 0.0):
+                to += 1
+        else:
+            line.isGap = False  #не очень консистентно, но самую-самую малость быстрее
+            line.set_as_tangent_with_1_pnt(pnts[:, fr])
+            to = fr + 1
+            if (to < Npnts) and (pnts[0, to] != 0.0 or pnts[1, to] != 0.0) and (norm(pnts[:2, to] - pnts[:2, fr]) <= continuity):   #допуск неразрывности пары точек
+                line.set_with_2_pnts(pnts[:, fr], pnts[:, to])
+                to += 1
+                while (to < Npnts) and (pnts[0, to] != 0.0 or pnts[1, to] != 0.0) and (line.get_distance_to_pnt(pnts[:, to]) <= tolerance): #допуск близости к прямой, когда точек уже больше 2-х
+                    to += 1
+                    if (not (to - fr) % 2):   #делится на 2
+                        line.set_with_2_pnts(pnts[:, fr], pnts[:, fr + (to - fr) // 2])
+
+            if (to - fr > 2):
+                to += line.set_best_with_LMS(pnts[:, fr : to])
+
+        if (not line.isGap):
+
+            if (not prev_line.isGap):   #предыдущая есть, можем, попробовать продолжить
+
+                prev_line.get_intersection(line, lines[:, Nlines])  #получаем точку пересечения текущей и предыдудщей
+                if (norm(pnts[:2, fr - 1] - lines[:2, Nlines]) > tolerance and norm(pnts[:2, fr] - lines[:2, Nlines]) > tolerance): #точка пересечения далеко, значит, не продолжаем
+
+                    prev_line.get_projection_of_pnt_Ex(pnts[:, fr - 1], lines[:, Nlines], half_dphi, False)  #закрываем предыдущую
+                    Nlines += 1
+
+                    if (norm(pnts[:2, fr] - pnts[:2, fr - 1]) > continuity): #если необходимая непрерывность нарушена, добавляем неявный пробел
+                        lines[:2, Nlines] = 0.001
+                        Nlines += 1
+
+                    prev_line.isGap = True
+
+                else:
+                    Nlines += 1
+
+            if (prev_line.isGap):   #открываем текущую
+                line.get_projection_of_pnt_Ex(pnts[:, fr], lines[:, Nlines], half_dphi, True)
+                Nlines += 1
+
+            if (to >= Npnts): #закрываем последнюю
+                line.get_projection_of_pnt_Ex(pnts[:, to - 1], lines[:, Nlines], half_dphi, False)
+                Nlines += 1
+
+        else:
+
+            if (not prev_line.isGap): #сперва закрываем предыдущую, если она есть
+                prev_line.get_projection_of_pnt_Ex(pnts[:, fr - 1], lines[:, Nlines], half_dphi, False) 
+                Nlines += 1
+
+            if (fr == 0 or to >= Npnts or norm(pnts[:2, to] - pnts[:2, fr - 1]) > continuity):
+                lines[:2, Nlines] = 0.0 #добавляем пробел
+                Nlines += 1
+
+
+        prev_line = line.copy()
+        fr = to
+    
+    return Nlines
 
 def firstPnt(pnts : np.ndarray) -> None:
-    pnts[0, 0] = 0.5 * random.rand() - 0.25
-    pnts[1, 0] = 0.5 * random.rand() - 0.25
-    pnts[2, 0] = 2.0 * m.pi * random.rand() - m.pi
+    pnts[0, 0] = 50.0 + 0.5 * random.rand() - 0.25
+    pnts[1, 0] = 50.0 + 0.5 * random.rand() - 0.25
+    pnts[2, 0] = 2.0 * math.pi * random.rand() - math.pi
 
 def createPnts(pnts : np.ndarray, N, d0 = 0.1, shape = 0, mess = 0.1) -> None:
     global pntsBuf
@@ -57,12 +277,12 @@ def createPnts(pnts : np.ndarray, N, d0 = 0.1, shape = 0, mess = 0.1) -> None:
 
     for i in range(1, N):
         d = d0 * (1 + random.randn() * mess)
-        pnts[0, i] = pnts[0, i - 1] + d * m.cos(pnts[2, i - 1])
-        pnts[1, i] = pnts[1, i - 1] + d * m.sin(pnts[2, i - 1])
+        pnts[0, i] = pnts[0, i - 1] + d * cos(pnts[2, i - 1])
+        pnts[1, i] = pnts[1, i - 1] + d * sin(pnts[2, i - 1])
 
         if (shape == 0):    #polyline
             if (random.rand() > 1 - 5.0 / N): # 5 fractures in average
-                pnts[2, i] = pnts[2, i - 1] + m.pi * random.rand() - m.pi/2
+                pnts[2, i] = pnts[2, i - 1] + math.pi * random.rand() - math.pi/2
                 i_ang = i
             else:
                 pnts[2, i] = pnts[2, i_ang] * (1 + random.randn() * mess)
@@ -71,154 +291,88 @@ def createPnts(pnts : np.ndarray, N, d0 = 0.1, shape = 0, mess = 0.1) -> None:
 
     pntsBuf = pnts[:2, :].copy()
 
-def getLines(lines : np.ndarray, pnts : np.ndarray, Npnts, tolerance = 0.1) -> int:
-    """#returns the number of the gotten lines in lines"""
-
-    global Nlines
-
-    line = np.zeros([4])
-    pcross = np.array([0.0, 0.0])
-
-    i = 1
-    Nlines = 0
-
-    while i < Npnts:
-        gap = tolerance
-        i0 = i
-
-        while True:
-
-            line[0] = (pnts[1, i] - pnts[1, i - 1]) / (pnts[0, i] - pnts[0, i - 1])
-            line[1] = pnts[1, i] - line[0] * pnts[0, i]
-            byNpnts = 2
-
-            while True:
-                
-                i += 1
-
-                if (i < N and abs(line[0] * pnts[0, i] - pnts[1, i] + line[1]) / m.sqrt(line[0]**2 + 1) < gap):
-                    if (not byNpnts % 2):
-                        line[0] = (pnts[1, i - byNpnts // 2] - pnts[1, i - byNpnts]) / (pnts[0, i - byNpnts // 2] - pnts[0, i - byNpnts])
-                        line[1] = pnts[1, i - byNpnts] - line[0] * pnts[0, i - byNpnts]
-                    byNpnts += 1
-                else:
-                    (line[0], line[1], q0) = lineApproxAveraging(pnts, i - byNpnts, i)
-
-                    while (q0 > 0.0001):
-                        (line_0, line_1, q) = lineApproxAveraging(pnts, i - byNpnts, i - 1)
-                        if (q > q0):
-                            break
-                        else:
-                            i -= 1
-                            byNpnts -= 1
-                            line[0] = line_0
-                            line[1] = line_1
-                            q0 = q
-
-                    if (Nlines > 0):
-                        pcross[0] = (line[1] - lines[1, Nlines - 1]) / (lines[0, Nlines - 1] - line[0])
-                        pcross[1] = line[0] * pcross[0] + line[1]
-
-                        if (np.linalg.norm(pnts[:2, i - byNpnts] - pcross) > tolerance or m.isnan(pcross[0]) or m.isinf(pcross[0])):
-                            if (byNpnts <= 2):
-                                pcross[0] = (pnts[0, i - 2] + lines[0, Nlines - 1] * pnts[1, i - 2] - lines[0, Nlines - 1] * lines[1, Nlines - 1]) / (lines[0, Nlines - 1]**2 + 1)
-                                pcross[1] = lines[0, Nlines - 1] * pcross[0] + lines[1, Nlines - 1]
-
-                                line[0] = (pnts[1, i - 1] - pcross[1]) / (pnts[0, i - 1] - pcross[0])
-                                line[1] = pcross[1] - line[0] * pcross[0]
-                                lines[3, Nlines - 1] = pcross[0]
-                                line[2] = pcross[0]
-                            else:
-                                i = i0
-                                gap *= 0.75
-                                break
-                        else:
-                            lines[3, Nlines - 1] = pcross[0]
-                            line[2] = pcross[0]
-
-                    else:
-                        line[2] = (pnts[0, 0] + line[0] * pnts[1, 0] - line[0] * line[1]) / (line[0]**2 + 1)
-
-                    if (i > N - 1):
-                        line[3] = (pnts[0, N - 1] + line[0] * pnts[1, N - 1] - line[0] * line[1]) / (line[0]**2 + 1)
-
-                    break
-
-            if (i > i0):
-                break
-            else:
-                continue
-
-        lines[:, Nlines] = line
-        Nlines += 1
-    
-    return Nlines
-
-def drawLoad(xlim = (-4, 4), ylim = (-4, 4)):
+def drawLoad(xlim = (46, 54), ylim = (46, 54)):
 
     ax.cla()
 
     ax.set(xlim = xlim, ylim = ylim)
     ax.set_aspect('equal')
 
-    ax.scatter(pnts[0, 0], pnts[1, 0], s = 20, marker = 'o', Color = 'red')
-    ax.scatter(pnts[0, 1:], pnts[1, 1:], s = 20, marker = 'o', Color = 'gray')
+    ax.scatter(pnts[0, 0], pnts[1, 0], s = 30, marker = 'o', Color = 'red')
+    ax.scatter(pnts[0, 1:], pnts[1, 1:], s = 30, marker = 'o', Color = 'gray')
 
-    for i in range(Nlines):
-        ax.plot([lines[2, i], lines[3, i]], [lines[0, i] * lines[2, i] + lines[1, i], lines[0, i] * lines[3, i] + lines[1, i]], linewidth = 3)
+    # ax.plot(lines[0, :Nlines], lines[1, :Nlines], linewidth = 4.0)
+
+    v = 0
+    while v < Nlines:
+        
+        u = v
+
+        while (v < Nlines and (lines[0, v] > 0.01 or lines[1, v] > 0.01)):
+            v += 1
+
+        if (v != u):
+            ax.plot(lines[0, u : v], lines[1, u : v], linewidth = 4.0)
+
+        if (v < (Nlines - 1) and lines[0, v] != 0.0 and lines[1, v] != 0.0):
+            ax.plot([lines[0, v - 1], lines[0, v + 1]], [lines[1, v - 1], lines[1, v + 1]], color = 'black', linewidth = 4.0)
+
+        v += 1
     
     fig.canvas.draw_idle()
 
 def nextPnts(event):
+    global Nlines
     with mutex:
         firstPnt(pnts)
 
         createPnts(pnts, N, shape = shape, mess = mess)
-        getLines(lines, pnts, N, tol)
+        Nlines = getLines(lines, pnts, N, cont, half_dphi, tol)
 
         drawLoad()
 
 def updatePnts(val):
-    global mess
+    global Nlines, mess
     with mutex:
         mess = val
         createPnts(pnts, N, shape = shape, mess = mess)
-        getLines(lines, pnts, N, tol)
+        Nlines = getLines(lines, pnts, N, cont, half_dphi, tol)
         drawLoad()
 
 def updateLinesTolerance(val):
-    global tol
-    
+    global Nlines, tol
     with mutex:
         tol = val
-        getLines(lines, pnts, N, tol)
+        Nlines = getLines(lines, pnts, N, cont, half_dphi, tol)
     
     drawLoad(ax.get_xlim(), ax.get_ylim())
 
 def updatePntsShape(event):
-    global shape
+    global Nlines, shape
     with mutex:
         shape += 1
         if shape > 1:
             shape = 0
         createPnts(pnts, N, shape = shape, mess = mess)
-        getLines(lines, pnts, N, tol)
+        Nlines = getLines(lines, pnts, N, cont, half_dphi, tol)
         drawLoad()
 
 jit = False
 def jitter(event):
     global jit
-    
     def foo():
+        global Nlines
+        rns = np.zeros([2, N])
         while jit and plt.get_fignums():
             with mutex:
-                rns = np.zeros([2, N])
+                rns[:] = 0.0
                 for i in range(N):
                     if random.rand() > 0.9:
-                        rns[:, i] += 0.5 * random.rand(2) - 0.25
-                pnts[:2, :] = pntsBuf + 0.02 * random.rand(2, N) - 0.01 + rns
+                        rns[:2, i] = 0.5 * random.rand(2) - 0.25
 
-                getLines(lines, pnts, N, tol)
+                pnts[:2, :N] = pntsBuf + 0.02 * random.rand(2, N) - 0.01 + rns
+
+                Nlines = getLines(lines, pnts, N, cont, half_dphi, tol)
                 drawLoad(ax.get_xlim(), ax.get_ylim())
             time.sleep(0.5)
 
@@ -228,10 +382,12 @@ def jitter(event):
 
 def main():
 
+    global Nlines
+    
     firstPnt(pnts)
     createPnts(pnts, N, shape = shape, mess = mess)
 
-    getLines(lines, pnts, N, tol)
+    Nlines = getLines(lines, pnts, N, cont, half_dphi, tol)
     drawLoad()
 
     ax1 = plt.axes([0.15, 0.17, 0.45, 0.03])
