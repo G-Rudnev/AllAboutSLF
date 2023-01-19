@@ -1,7 +1,7 @@
-# from ctypes import addressof
+import sys
+sys.path.append('./')
 import numpy as np
 import time
-import threading
 from Lidar import*
 from Config import*
 

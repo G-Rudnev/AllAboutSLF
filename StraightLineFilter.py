@@ -19,13 +19,12 @@ from matplotlib.widgets import Slider, Button
 
 N = 50
 
-pntsXY = np.zeros([3, N])
-pntsPhi = np.zeros([N])
-pntsBuf = np.zeros([2, N])
+pntsXY = [] #теперь можно импортировать, память выделяется только в главном вызове
+pntsPhi = []
+pntsBuf = []
 
 Nlines = 0
-linesXY = np.zeros([3, N])
-linesXY[2, :] = 1.0
+linesXY = []
 
 deep = 5.0
 cont = 0.6
@@ -35,8 +34,8 @@ tol = 0.1
 mess = 0.1
 shape = 0
 
-fig = plt.figure()
-ax = plt.axes([0.07, 0.25, 0.45, 0.7])
+fig = []    #и плоттер запускается только в главном вызове
+ax = []
 
 mutex = threading.RLock()
 
@@ -491,7 +490,17 @@ def jitter(event):
 
 def main():
 
-    global Nlines
+    global Nlines, ax, fig
+
+    pntsXY = np.zeros([3, N])
+    pntsPhi = np.zeros([N])
+    pntsBuf = np.zeros([2, N])
+
+    linesXY = np.zeros([3, N])
+    linesXY[2, :] = 1.0
+
+    fig = plt.figure()
+    ax = plt.axes([0.07, 0.25, 0.45, 0.7])
     
     firstPnt(pntsXY, pntsPhi)
     createPnts(pntsXY, pntsPhi, pntsBuf, N, shape = shape, mess = mess)

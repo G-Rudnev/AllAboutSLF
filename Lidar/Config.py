@@ -15,9 +15,9 @@ def getTokensFromFile(filename, dict):
                 continue
 
 globalPars = {}
-getTokensFromFile('Global.ini', globalPars)
+getTokensFromFile('Lidar\\Global.ini', globalPars)
 mainDevicesPars = {}
-getTokensFromFile('MainDevices.ini', mainDevicesPars)
+getTokensFromFile('Lidar\\MainDevices.ini', mainDevicesPars)
 
 class RoboException(Exception):
     pass
