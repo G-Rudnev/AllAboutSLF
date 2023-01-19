@@ -243,7 +243,7 @@ class Lidar():
                             if (self._xy[0, n - 1] == 0.0 and self._xy[1, n - 1] == 0.0):
                                 self._phi[self._Nlines - 1] = 0.0174532925199432957692369 * (180.0 - (self.phiTo - self.mountPhi))
 
-                            self._Nlines = SLF.getLines(self._linesXY, self._xy, self._phi, n, deep = self.deep, continuity = 0.6, half_dphi = 2.0 * self.half_dphi, tolerance = 0.0)
+                            self._Nlines = SLF.getLines(self._linesXY, self._xy, self._phi, n, deep = self.deep, continuity = 0.6, half_dphi = 2.0 * self.half_dphi, tolerance = 0.1)
 
                             xlim = self.ax.get_xlim()
                             ylim = self.ax.get_ylim()
