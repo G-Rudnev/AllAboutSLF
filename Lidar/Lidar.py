@@ -5,6 +5,8 @@ import threading
 import numpy as np
 from numpy.linalg import norm as norm 
 import math
+from math import inf as inf
+from math import pi as pi
 from math import tan as tan
 from math import sin as sin
 from math import cos as cos
@@ -17,13 +19,14 @@ __all__ = ['Lidar']
 
 class Line():
 
-    def LMS(X : np.ndarray, Y : np.ndarray, N : int, x_sum, y_sum, xx_sum, yy_sum, xy_sum):
+    def LMS(X : np.ndarray, Y : np.ndarray, fr : int, to : int, x_sum, y_sum, xx_sum, yy_sum, xy_sum):
         """sums are of: x, y, xx, yy, xy.\n
         X and Y must have the same length, numpy exception will be thrown if not"""
 
+        N = to - fr
         phi = xy_sum - x_sum * y_sum / N
 
-        if abs(phi) > 0.0001:
+        if abs(phi) > 0.000001:
             # Вычисление A для минимумов функции потерь
             theta = (yy_sum - xx_sum) / phi + (x_sum ** 2 - y_sum ** 2) / N / phi
             D = theta ** 2 + 4.0  # дискриминант
@@ -34,17 +37,18 @@ class Line():
             C2 = (y_sum - x_sum * A2) / N
             # Подстановка в функцию потерь, выявление лучшего
 
-            distsSum1 = np.sum(np.abs(X[:N] * A1 - Y[:N] + C1)) / math.sqrt(A1 ** 2 + 1.0)
-            distsSum2 = np.sum(np.abs(X[:N] * A2 - Y[:N] + C2)) / math.sqrt(A2 ** 2 + 1.0)
+            distsSum1 = np.sum(np.abs(X[fr : to] * A1 - Y[fr : to] + C1)) / math.sqrt(A1 ** 2 + 1.0)
+            distsSum2 = np.sum(np.abs(X[fr : to] * A2 - Y[fr : to] + C2)) / math.sqrt(A2 ** 2 + 1.0)
         else:
-            A1 = math.inf  #вертикальная прямая
+
+            A1 = inf  #вертикальная прямая
             A2 = 0.0    #горизонтальная прямая
 
             C1 = x_sum / N    #вообще говоря, должен быть с минусом
             C2 = y_sum / N
             
-            distsSum1 = np.sum(np.abs(X[:N] - C1))
-            distsSum2 = np.sum(np.abs(Y[:N] - C2))
+            distsSum1 = np.sum(np.abs(X[fr : to] - C1))
+            distsSum2 = np.sum(np.abs(Y[fr : to] - C2))
 
         # Выбор наименьшего значения функции потерь, возврат соответствующих ему параметров А и С
         if distsSum1 < distsSum2:
@@ -76,7 +80,7 @@ class Line():
             self.line[0] = -p[0] / p[1]
             self.line[1] = (p[0] * p[0] + p[1] * p[1]) / p[1]
         else:
-            self.line[0] = math.inf
+            self.line[0] = inf
             self.line[1] = p[0]
         self.isSingle = True
 
@@ -86,13 +90,14 @@ class Line():
             self.line[0] = (p2[1] - p1[1]) / dx
             self.line[1] = p1[1] - self.line[0] * p1[0]
         else:
-            self.line[0] = math.inf
+            self.line[0] = inf
             self.line[1] = p1[0] #без минуса удобнее
         self.isSingle = False
 
-    def set_best_with_LMS(self, pnts : np.ndarray):
-        """Движемся по одной точке назад до первого увеличения q (функции ошибки) или до в целом норм вписывания.\n
-        Возвращает смещение с конца (<=0 !!!) до последней точки, взятой в прямую."""
+    def set_with_LMS(self, pnts : np.ndarray, best = True):
+        """Если best = True, то сначала движемся по одной точке от конца назад до первого увеличения q (функции ошибки),\n
+        а потом аналогично по одной точке от начала вперёд или до в целом норм вписывания.\n
+        Возвращает смещение с начала, с конца (<=0 !!!) до наилучше вписываемых точек."""
         N = pnts.shape[1]
 
         X = pnts[0, :]
@@ -100,21 +105,37 @@ class Line():
 
         sums = np.sum(X), np.sum(Y), np.dot(X, X), np.dot(Y, Y), np.dot(X, Y)
 
-        self.line[0], self.line[1], self._q = Line.LMS(X, Y, N, *sums)
-
-        shift = 0
-        while self._q >= self.qOk:
-            shift -= 1
-            sums = sums[0] - X[shift],  sums[1] - Y[shift],  sums[2] - X[shift] * X[shift],  sums[3] - Y[shift] * Y[shift],  sums[4] - X[shift] * Y[shift]
-            A, B, q = Line.LMS(X, Y, N + shift, *sums)
-            if (q > self._q):
-                shift += 1
-                break
-            else:
-                self.line[0], self.line[1], self._q = A, B, q
+        self.line[0], self.line[1], self._q = Line.LMS(X, Y, 0, N, *sums)
 
         self.isSingle = False
-        return shift
+
+        if best:
+
+            beg = 0
+            end = N
+
+            direction = True
+            while self._q >= self.qOk:
+                if direction:
+                    end -= 1
+                    sums = sums[0] - X[end],  sums[1] - Y[end],  sums[2] - X[end] * X[end],  sums[3] - Y[end] * Y[end],  sums[4] - X[end] * Y[end]
+                else:
+                    sums = sums[0] - X[beg],  sums[1] - Y[beg],  sums[2] - X[beg] * X[beg],  sums[3] - Y[beg] * Y[beg],  sums[4] - X[beg] * Y[beg]
+                    beg += 1
+                A, B, q = Line.LMS(X, Y, beg, end, *sums)
+                if (q > self._q):   #если последнее укорочение оказалось хуже, берём предпоследнее
+                    if direction:
+                        end += 1
+                        direction = False
+                    else:
+                        beg -= 1
+                        break
+                else:
+                    self.line[0], self.line[1], self._q = A, B, q
+
+            return beg, end - N
+        else:
+            return 0, 0
 
     def get_distance_to_pnt(self, p : np.ndarray, signed = False):
         if signed:
@@ -146,15 +167,15 @@ class Line():
                 pout[0], pout[1] = self.line[1], p[1]
         else:
             l = norm(p[:2]) * tan(half_dphi) #находим точку на линии, отстоящую вправо от точки касания на угол half_dphi
-            alpha = atan(self.line[0])
+            alpha = atan2(p[1], p[0])   # + pi / 2.0
             if (direction):
-                pout[0], pout[1] = p[0] + l * cos(alpha), p[1] + l * sin(alpha)
+                pout[0], pout[1] = p[0] - l * sin(alpha), p[1] + l * cos(alpha) #cos(x) = sin(x + pi/2),  -sin(x) = cos(x + pi/2)
             else:
-                pout[0], pout[1] = p[0] - l * cos(alpha), p[1] - l * sin(alpha)
+                pout[0], pout[1] = p[0] + l * sin(alpha), p[1] - l * cos(alpha)
     
     def get_intersection(self, line, pout : np.ndarray):
         if (self.line[0] == line.line[0]):
-            pout[0], pout[1] = math.inf, math.inf #прямые параллельны, в т.ч. и если обе вертикальные
+            pout[0], pout[1] = inf, inf #прямые параллельны, в т.ч. и если обе вертикальные
         else:
             if math.isinf(self.line[0]):
                 pout[0], pout[1] = self.line[1], line.line[0] * self.line[1] + line.line[1] #вертикальная исходная
@@ -164,52 +185,90 @@ class Line():
                 pout[0] = (line.line[1] - self.line[1]) / (self.line[0] - line.line[0])
                 pout[1] = self.line[0] * pout[0] + self.line[1]
 
-def getLines(lines : np.ndarray, pnts : np.ndarray, Npnts : int, continuity : float, half_dphi : float, tolerance : float) -> int:
+def getLines(linesXY : np.ndarray, pntsXY : np.ndarray, pntsPhi : np.ndarray, Npnts : int, deep : float, continuity : float, half_dphi : float, tolerance : float) -> int:
     """#returns the number of the gotten points in lines"""
 
     half_dphi *= 0.0174532925199432957692369
 
     fr = 0
     to = 0
+    ex_fr = 0
+    ex_to = 0
     Nlines = 0
 
     line = Line()
     prev_line = Line()
+    ex_line = Line()
+
+    extra = False
+
+    ex_pnt = np.zeros([2])
 
     while fr < Npnts:
 
-        if (pnts[0, fr] == 0.0 and pnts[1, fr] == 0.0):
-            line.isGap = True   #не очень консистентно, но самую-самую малость быстрее
-            to = fr + 1
-            while (to < Npnts) and (pnts[0, to] == 0.0 and pnts[1, to] == 0.0):
-                to += 1
-        else:
-            line.isGap = False  #не очень консистентно, но самую-самую малость быстрее
-            line.set_as_tangent_with_1_pnt(pnts[:, fr])
-            to = fr + 1
-            if (to < Npnts) and (pnts[0, to] != 0.0 or pnts[1, to] != 0.0) and (norm(pnts[:2, to] - pnts[:2, fr]) <= continuity):   #допуск неразрывности пары точек
-                line.set_with_2_pnts(pnts[:, fr], pnts[:, to])
-                to += 1
-                while (to < Npnts) and (pnts[0, to] != 0.0 or pnts[1, to] != 0.0) and (line.get_distance_to_pnt(pnts[:, to]) <= tolerance): #допуск близости к прямой, когда точек уже больше 2-х
+        #ФОРМИРОВАНИЕ СЕГМЕНТА
+        if (not extra):
+            if (pntsXY[0, fr] == 0.0 and pntsXY[1, fr] == 0.0):
+                line.isGap = True   #не очень консистентно, но самую-самую малость быстрее
+                to = fr + 1
+                while (to < Npnts) and (pntsXY[0, to] == 0.0 and pntsXY[1, to] == 0.0):
                     to += 1
-                    if (not (to - fr) % 2):   #делится на 2
-                        line.set_with_2_pnts(pnts[:, fr], pnts[:, fr + (to - fr) // 2])
+            else:
+                line.isGap = False  #не очень консистентно, но самую-самую малость быстрее
+                line.set_as_tangent_with_1_pnt(pntsXY[:, fr])
+                to = fr + 1
+                if (to < Npnts) and (pntsXY[0, to] != 0.0 or pntsXY[1, to] != 0.0) and (norm(pntsXY[:2, to] - pntsXY[:2, fr]) <= continuity):   #допуск неразрывности пары точек
+                    line.set_with_2_pnts(pntsXY[:, fr], pntsXY[:, to])
+                    to += 1
+                    while (to < Npnts) and (pntsXY[0, to] != 0.0 or pntsXY[1, to] != 0.0) and (line.get_distance_to_pnt(pntsXY[:, to]) <= tolerance): #допуск близости к прямой, когда точек уже больше 2-х
+                        to += 1
+                        if (not (to - fr) % 2):   #делится на 2
+                            line.set_with_2_pnts(pntsXY[:, fr], pntsXY[:, fr + (to - fr) // 2])
 
-            if (to - fr > 2):
-                to += line.set_best_with_LMS(pnts[:, fr : to])
+                if (to - fr > 2):
+                    beg, end = line.set_with_LMS(pntsXY[:, fr : to])
 
-        if (not line.isGap):
+                    if beg != 0:    #если от начала точки убрали, начинается добалвение экстра линии
+                        ex_line = line.copy()   #ex_line в интеграции используется только если текущая - разрыв
+                        ex_fr = fr + beg # начало ex_line
+                        ex_to = to + end # начало следующей за ex_line 
+                        extra = True
+                        if beg == 1: #1 точка сначала выпала
+                            line.line[0], line.line[1] = pntsXY[1, fr] / pntsXY[0, fr], 0.0
+                            fr = fr - 1
+                            to = fr + 1
+                        elif beg == 2:   #2 точки
+                            line.set_with_2_pnts(pntsXY[:, fr], pntsXY[:, fr + 1])
+                            to = fr + 1
+                        else:
+                            line.set_with_LMS(pntsXY[:, fr : fr + beg], False)
+                            to = fr + beg - 1
+                    else:
+                        to += end
 
-            if (not prev_line.isGap):   #предыдущая есть, можем, попробовать продолжить
+        else:
+            line = ex_line.copy()
+            fr = ex_fr
+            to = ex_to
+            extra = False
 
-                prev_line.get_intersection(line, lines[:, Nlines])  #получаем точку пересечения текущей и предыдудщей
-                if (norm(pnts[:2, fr - 1] - lines[:2, Nlines]) > tolerance and norm(pnts[:2, fr] - lines[:2, Nlines]) > tolerance): #точка пересечения далеко, значит, не продолжаем
+        #ИНТЕГРАЦИЯ СЕГМЕНТА
+        if (not line.isGap):    #текущая - сплошная
 
-                    prev_line.get_projection_of_pnt_Ex(pnts[:, fr - 1], lines[:, Nlines], half_dphi, False)  #закрываем предыдущую
+            if (not prev_line.isGap):   #безразрывно по точкам 2 линии друг за другом
+
+                prev_line.get_intersection(line, linesXY[:, Nlines])  #получаем точку пересечения текущей и предыдудщей
+                step_dist = norm(pntsXY[:2, fr] - pntsXY[:2, fr - 1])
+                #Далее как раз outliers filter происходит: если точка пересечения двух прямых ближе и к началу следующей и к концу предыущей, 
+                #чем расстояние между этими началом и концом, то берём в набор точку пересечения (написано же полностью обратное условие: x > a or y > b = not (x <= a and y <= b))
+                #А вкратце непосредственно читаем: если точка пересечения далеко, не берём её 
+                if (norm(pntsXY[:2, fr - 1] - linesXY[:2, Nlines]) > step_dist or norm(pntsXY[:2, fr] - linesXY[:2, Nlines]) > step_dist): 
+
+                    prev_line.get_projection_of_pnt_Ex(pntsXY[:, fr - 1], linesXY[:, Nlines], half_dphi, False)  #закрываем предыдущую
                     Nlines += 1
 
-                    if (norm(pnts[:2, fr] - pnts[:2, fr - 1]) > continuity): #если необходимая непрерывность нарушена, добавляем неявный пробел
-                        lines[:2, Nlines] = 0.001
+                    if (step_dist > continuity): #если заданная непрерывность превышена, добавляем неявный разрыв, а если нет, то ломаная просто неразрывно подолжается
+                        linesXY[:2, Nlines] = 0.001
                         Nlines += 1
 
                     prev_line.isGap = True
@@ -217,24 +276,68 @@ def getLines(lines : np.ndarray, pnts : np.ndarray, Npnts : int, continuity : fl
                 else:
                     Nlines += 1
 
-            if (prev_line.isGap):   #открываем текущую
-                line.get_projection_of_pnt_Ex(pnts[:, fr], lines[:, Nlines], half_dphi, True)
+            if (prev_line.isGap):   #открываем текущую ... НАЧАЛО ЛИНИЕЙ ТОЖЕ ОКАЗЫВАЕТСЯ ЗДЕСЬ
+                line.get_projection_of_pnt_Ex(pntsXY[:, fr], linesXY[:, Nlines], half_dphi, True)
                 Nlines += 1
 
             if (to >= Npnts): #закрываем последнюю
-                line.get_projection_of_pnt_Ex(pnts[:, to - 1], lines[:, Nlines], half_dphi, False)
+                line.get_projection_of_pnt_Ex(pntsXY[:, to - 1], linesXY[:, Nlines], half_dphi, False)
                 Nlines += 1
 
-        else:
+        else:   #текущая - разрыв
 
-            if (not prev_line.isGap): #сперва закрываем предыдущую, если она есть
-                prev_line.get_projection_of_pnt_Ex(pnts[:, fr - 1], lines[:, Nlines], half_dphi, False) 
+            if (fr == 0):   #начало с разрыва
+                if (to < Npnts):
+                    ex_line.line[0], ex_line.line[1] = tan(pntsPhi[0]), 0.0
+                    ex_line.get_projection_of_pnt(pntsXY[:, to], linesXY[:, 0])
+                    linesXY[:2, 1] = 0.0    #здесь разрыв может быть любой длины
+                    Nlines = 2
+                else:   #облако пустое
+                    linesXY[0, 0], linesXY[1, 0] = deep * cos(pntsPhi[0]), deep * sin(pntsPhi[0])
+                    linesXY[:2, 1] = 0.0
+                    linesXY[0, 2], linesXY[1, 2] = deep * cos(pntsPhi[Npnts - 1]), deep * sin(pntsPhi[Npnts - 1])
+                    Nlines = 3
+                    #####   КОНЕЦ   #####
+            else:
+                #не может быть двух подряд разрывов, только в начале, которое уже отработано, поэтому           
+                #всегда сперва закрываем предыдущую
+                prev_line.get_projection_of_pnt_Ex(pntsXY[:, fr - 1], linesXY[:, Nlines], half_dphi, False) 
                 Nlines += 1
 
-            if (fr == 0 or to >= Npnts or norm(pnts[:2, to] - pnts[:2, fr - 1]) > continuity):
-                lines[:2, Nlines] = 0.0 #добавляем пробел
-                Nlines += 1
+                if (to >= Npnts):
+                    linesXY[:2, Nlines] = 0.0 #здесь разрыв также может быть любой длины
+                    Nlines += 1
 
+                    ex_line.line[0], ex_line.line[1] = tan(pntsPhi[Npnts - 1]), 0.0
+                    ex_line.get_projection_of_pnt(pntsXY[:, fr - 1], linesXY[:, Nlines])
+                    Nlines += 1
+                    ######  КОНЕЦ   ######
+
+                elif (norm(pntsXY[:2, to] - pntsXY[:2, fr - 1]) > continuity): #разрыв достаточно большой и представляет интерес
+                    #здесь до и после есть точка, по ним и будем работать
+                        
+                    ex_line.line[0], ex_line.line[1] = tan(pntsPhi[fr - 1]), 0.0
+                    ex_line.get_projection_of_pnt(pntsXY[:, to], ex_pnt)
+                    if (norm(ex_pnt) > norm([pntsXY[:2, fr - 1]]) and (ex_pnt[0] * pntsXY[0, fr - 1] > 0.0 or ex_pnt[1] * pntsXY[1, fr - 1] > 0.0)): #если ex_pnt дальше вдоль взгляда, чем pntsXY; вторая половина компенсирует нахождние с двух сторон от (0, 0)
+                        linesXY[:2, Nlines] = 0.001
+                        Nlines += 1
+                        linesXY[:2, Nlines] = ex_pnt    #так копирует
+                        Nlines += 1
+                        linesXY[:2, Nlines] = 0.0   #разрыв до или после неявного разрыва может быть любой длины
+                        Nlines += 1                            
+                    else:   #оба перпендикуляра от краев до противоположных лучей не могут быть "за" краями 
+                        ex_line.line[0], ex_line.line[1] = tan(pntsPhi[to]), 0.0
+                        ex_line.get_projection_of_pnt(pntsXY[:, fr - 1], ex_pnt)
+                        if (norm(ex_pnt) > norm([pntsXY[:2, to]]) and (ex_pnt[0] * pntsXY[0, to] > 0.0 or ex_pnt[1] * pntsXY[1, to] > 0.0)):    #аналогично, что и выше
+                            linesXY[:2, Nlines] = 0.0
+                            Nlines += 1  
+                            linesXY[:2, Nlines] = ex_pnt    #так копирует
+                            Nlines += 1
+                            linesXY[:2, Nlines] = 0.001
+                            Nlines += 1
+                        else:
+                            linesXY[:2, Nlines] = 0.0
+                            Nlines += 1
 
         prev_line = line.copy()
         fr = to
@@ -276,23 +379,35 @@ class Lidar():
         #MAIN DATA
         self.half_dphi = 0.3
         """in degrees"""
-        self.phiFrom = float(mainDevicesPars["lidarPhiFrom"])
-        self.phiTo = float(mainDevicesPars["lidarPhiTo"])
         self.mountPhi = float(mainDevicesPars["lidarMountPhi"])
-        """counterclockwise is positive"""
+        self.phiFrom = 180.0 - (float(mainDevicesPars["lidarPhiTo"]) - self.mountPhi - self.half_dphi)
+        """on this lidar counterclockwise is positive and 180.0 deg. shifted angle"""
+        self.phiTo = 180.0 - (float(mainDevicesPars["lidarPhiFrom"]) - self.mountPhi - self.half_dphi)
+        """on this lidar clockwise is positive and 180.0 deg. shifted angle"""
+        self.deep = 5.0
 
         self.N = round(1.1 * (self.phiTo - self.phiFrom) / (self.half_dphi * 2.0) ) + 40
+
+        self.phiFromPositive = True
+        if (self.phiFrom < 0.0):
+            self.phiFrom += 360.0
+            self.phiFromPositive = False
+        if (self.phiTo < 0.0):
+            self.phiTo += 360
         
-        self._rphi = np.zeros([2, self.N])
+        #PRIVATE
+        # self._rphi = np.zeros([2, self.N])
         self._xy = np.zeros([3, self.N])
         self._xy[2, :] = 1.0
+        self._phi = np.zeros([self.N])
         self._NinRound = 0
+
         self._dx_dy_alpha = np.zeros([3])
         self._dx_dy_alphaE = np.zeros([3])
 
+        self._linesXY = np.zeros([3, self.N])
+        self._linesXY[2, :] = 1.0
         self._Nlines = 0
-        self._lines = np.zeros([3, self.N])
-        self._lines[2, :] = 1.0
 
         #PUBLIC
         self.xy = np.zeros([3, self.N])
@@ -301,7 +416,6 @@ class Lidar():
         self.dx_dy_alpha = np.zeros([3])
         #self.dx_dy_alphaE = np.array([0.0, 0.0, 0.0])
         self.LT = np.zeros([4, 4])
-        self.GC_v = np.zeros([4])
 
         #LOCKS
         self._thread = threading.Thread()
@@ -395,10 +509,10 @@ class Lidar():
             self.ready.set()
 
             def AngCorrect(dist):
-                cor = 0.0
                 if (dist):
-                    cor = 57.295779513 * math.atan(0.0218 / dist - 0.14037347)  #in degrees
-                return cor
+                    return 57.295779513 * math.atan(0.0218 / dist - 0.14037347)  #in degrees
+                else:
+                    return 0.0
 
             angles = np.zeros(self.N // 2)
             dists = np.zeros(self.N // 2)
@@ -406,6 +520,8 @@ class Lidar():
             self._dx_dy_alpha[:] = 0.0
             diffAngle = 0.0
             n = 0
+            
+            t2 = time.time() - 1.0
 
             while (self.ready.is_set() and threading.main_thread().is_alive()):
 
@@ -449,37 +565,48 @@ class Lidar():
                         if (not isRound and n): #возможен пропуск окончания круга, если проход оборота (360 град.) попадает аккурат между пакетами, но такого пока замечено не было
                             #!!!Нужно помнить, что начало круга из-за коррекции угла может весьма ощутимо плавать - до + нескольких градусов к желаемому PhiFrom
 
-                            self._Nlines = getLines(self._lines, self._xy, n, 0.6, 2.0 * self.half_dphi, tolerance = 0.1)
+                            if (self._xy[0, 0] == 0.0 and self._xy[1, 0] == 0.0):   #лидар отвратительно измеряет углы, если нет дистанции, а нач. и кон. угол очень важны
+                                self._phi[0] = 0.0174532925199432957692369 * (180.0 - (self.phiFrom - self.mountPhi))
+                            if (self._xy[0, n - 1] == 0.0 and self._xy[1, n - 1] == 0.0):
+                                self._phi[self._Nlines - 1] = 0.0174532925199432957692369 * (180.0 - (self.phiTo - self.mountPhi))
 
-                            xlim = self.ax.get_xlim()
-                            ylim = self.ax.get_ylim()
+                            self._Nlines = getLines(self._linesXY, self._xy, self._phi, n, deep = self.deep, continuity = 0.6, half_dphi = 2.0 * self.half_dphi, tolerance = 0.0)
 
-                            self.ax.cla()
+                            if (time.time() - t2 > 0.2):
+                                xlim = self.ax.get_xlim()
+                                ylim = self.ax.get_ylim()
 
-                            self.ax.set(xlim = xlim, ylim = ylim)
-                            self.ax.set_aspect('equal')
+                                self.ax.cla()
 
-                            self.ax.scatter(self._xy[0, :n], self._xy[1, :n], s = 10, marker = 'o', color = 'gray')
+                                self.ax.set(xlim = xlim, ylim = ylim)
+                                self.ax.set_aspect('equal')
 
-                            # self.ax.plot(self._lines[0, :self._Nlines], self._lines[1, :self._Nlines], linewidth = 4.0, color = 'red')
+                                self.ax.scatter(self._xy[0, :n], self._xy[1, :n], s = 30, marker = 'o', color = 'gray')
 
-                            v = 0
-                            while v < self._Nlines:
-                                
-                                u = v
+                                self.ax.plot([0.0, self._linesXY[0, 0]], [0.0, self._linesXY[1, 0]], color = 'black', linewidth = 4.0)
 
-                                while ((self._lines[0, v] > 0.01 or self._lines[1, v] > 0.01) and v < self._Nlines):
+                                v = 0
+                                while v < self._Nlines:
+                                    
+                                    u = v
+
+                                    while (v < self._Nlines and (abs(self._linesXY[0, v]) > 0.01 or abs(self._linesXY[1, v]) > 0.01)):
+                                        v += 1
+
+                                    if (v > u + 1):
+                                        self.ax.plot(self._linesXY[0, u : v], self._linesXY[1, u : v], linewidth = 4.0)
+
+                                    if (v < self._Nlines): 
+                                        if (self._linesXY[0, v] != 0.0 and self._linesXY[1, v] != 0.0):
+                                            self.ax.plot([self._linesXY[0, v - 1], self._linesXY[0, v + 1]], [self._linesXY[1, v - 1], self._linesXY[1, v + 1]], color = 'black', linewidth = 4.0)
+                                    else:
+                                        self.ax.plot([self._linesXY[0, v - 1], 0.0], [self._linesXY[1, v - 1], 0.0], color = 'black', linewidth = 4.0)
+
                                     v += 1
 
-                                if (v != u):
-                                    self.ax.plot(self._lines[0, u : v], self._lines[1, u : v], linewidth = 4.0)
+                                self.fig.canvas.draw_idle()
 
-                                if (v < (self._Nlines - 1) and self._lines[0, v] != 0.0 and self._lines[1, v] != 0.0):
-                                    self.ax.plot([self._lines[0, v - 1], self._lines[0, v + 1]], [self._lines[1, v - 1], self._lines[1, v + 1]], color = 'black', linewidth = 4.0)
-
-                                v += 1
-
-                            self.fig.canvas.draw_idle()
+                                t2 = time.time()
 
                             # #DATA LOAD AND PREPARING
                             # with self._mutexXY:
@@ -496,10 +623,16 @@ class Lidar():
                             n = 0
                             isRound = True
 
-                    if (angles[i] >= self.phiFrom - self.half_dphi and angles[i] < self.phiTo - self.half_dphi):
-                        if (dists[i] > 0.1 and dists[i] < 5.0):    #it is the limit of lidar itself
-                            self._xy[0, n] = dists[i] * -cos(0.0174532925199432957692369 * (angles[i] - self.mountPhi)) + self.lidarLC[0]
-                            self._xy[1, n] = dists[i] * sin(0.0174532925199432957692369 * (angles[i] - self.mountPhi)) + self.lidarLC[1]
+
+
+                    if (self.phiFromPositive and (angles[i] >= self.phiFrom and angles[i] < self.phiTo)) or \
+                        (not self.phiFromPositive and (angles[i] >= self.phiFrom or angles[i] < self.phiTo)):
+
+                        self._phi[n] = 0.0174532925199432957692369 * (180.0 - (angles[i] - self.mountPhi))
+
+                        if (dists[i] > 0.1 and dists[i] < self.deep):    #it is the limit of lidar itself
+                            self._xy[0, n] = dists[i] * cos(self._phi[n]) + self.lidarLC[0]
+                            self._xy[1, n] = dists[i] * sin(self._phi[n]) + self.lidarLC[1]
                             # self._rphi[0, n] = norm(self._xy[:2, n])
                             # self._rphi[1, n] = atan2(self._xy[1, n], self._xy[0, n])
                         else:
