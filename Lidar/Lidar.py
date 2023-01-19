@@ -195,8 +195,6 @@ class Lidar():
             self._dx_dy_alpha[:] = 0.0
             diffAngle = 0.0
             n = 0
-            
-            t2 = time.time() - 1.0
 
             while (self.ready.is_set() and threading.main_thread().is_alive()):
 
@@ -247,41 +245,38 @@ class Lidar():
 
                             self._Nlines = SLF.getLines(self._linesXY, self._xy, self._phi, n, deep = self.deep, continuity = 0.6, half_dphi = 2.0 * self.half_dphi, tolerance = 0.0)
 
-                            if (time.time() - t2 > 0.2):
-                                xlim = self.ax.get_xlim()
-                                ylim = self.ax.get_ylim()
+                            xlim = self.ax.get_xlim()
+                            ylim = self.ax.get_ylim()
 
-                                self.ax.cla()
+                            self.ax.cla()
 
-                                self.ax.set(xlim = xlim, ylim = ylim)
-                                self.ax.set_aspect('equal')
+                            self.ax.set(xlim = xlim, ylim = ylim)
+                            self.ax.set_aspect('equal')
 
-                                self.ax.scatter(self._xy[0, :n], self._xy[1, :n], s = 30, marker = 'o', color = 'gray')
+                            self.ax.scatter(self._xy[0, :n], self._xy[1, :n], s = 30, marker = 'o', color = 'gray')
 
-                                self.ax.plot([0.0, self._linesXY[0, 0]], [0.0, self._linesXY[1, 0]], color = 'black', linewidth = 4.0)
+                            self.ax.plot([0.0, self._linesXY[0, 0]], [0.0, self._linesXY[1, 0]], color = 'black', linewidth = 4.0)
 
-                                v = 0
-                                while v < self._Nlines:
-                                    
-                                    u = v
+                            v = 0
+                            while v < self._Nlines:
+                                
+                                u = v
 
-                                    while (v < self._Nlines and (abs(self._linesXY[0, v]) > 0.01 or abs(self._linesXY[1, v]) > 0.01)):
-                                        v += 1
-
-                                    if (v > u + 1):
-                                        self.ax.plot(self._linesXY[0, u : v], self._linesXY[1, u : v], linewidth = 4.0)
-
-                                    if (v < self._Nlines): 
-                                        if (self._linesXY[0, v] != 0.0 and self._linesXY[1, v] != 0.0):
-                                            self.ax.plot([self._linesXY[0, v - 1], self._linesXY[0, v + 1]], [self._linesXY[1, v - 1], self._linesXY[1, v + 1]], color = 'black', linewidth = 4.0)
-                                    else:
-                                        self.ax.plot([self._linesXY[0, v - 1], 0.0], [self._linesXY[1, v - 1], 0.0], color = 'black', linewidth = 4.0)
-
+                                while (v < self._Nlines and (abs(self._linesXY[0, v]) > 0.01 or abs(self._linesXY[1, v]) > 0.01)):
                                     v += 1
 
-                                self.fig.canvas.draw_idle()
+                                if (v > u + 1):
+                                    self.ax.plot(self._linesXY[0, u : v], self._linesXY[1, u : v], linewidth = 4.0)
 
-                                t2 = time.time()
+                                if (v < self._Nlines): 
+                                    if (self._linesXY[0, v] != 0.0 and self._linesXY[1, v] != 0.0):
+                                        self.ax.plot([self._linesXY[0, v - 1], self._linesXY[0, v + 1]], [self._linesXY[1, v - 1], self._linesXY[1, v + 1]], color = 'black', linewidth = 4.0)
+                                else:
+                                    self.ax.plot([self._linesXY[0, v - 1], 0.0], [self._linesXY[1, v - 1], 0.0], color = 'black', linewidth = 4.0)
+
+                                v += 1
+
+                            self.fig.canvas.draw_idle()
 
                             # #DATA LOAD AND PREPARING
                             # with self._mutexXY:

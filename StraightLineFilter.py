@@ -340,6 +340,7 @@ def getLines(linesXY : np.ndarray, pntsXY : np.ndarray, pntsPhi : np.ndarray, Np
                         
                     ex_line.line[0], ex_line.line[1] = tan(pntsPhi[fr - 1]), 0.0
                     ex_line.get_projection_of_pnt(pntsXY[:, to], ex_pnt)
+                    #отрабатываем разрывы через контроль нормалей к направлениям краевых лучей
                     if (norm(ex_pnt) > norm([pntsXY[:2, fr - 1]]) and (ex_pnt[0] * pntsXY[0, fr - 1] > 0.0 or ex_pnt[1] * pntsXY[1, fr - 1] > 0.0)): #если ex_pnt дальше вдоль взгляда, чем pntsXY; вторая половина компенсирует нахождние с двух сторон от (0, 0)
                         linesXY[:2, Nlines] = 0.001
                         Nlines += 1
