@@ -27,8 +27,8 @@ linesXY[1, :] = np.exp(pntsXY[1, :] * pntsXY[1, :] * pntsPhi)
 print('PY calc time:', time.time() - t0)
 
 t0 = time.time()
-lidarVector.pushPnts(id0)
-lidarVector.synchronize(id0)
+lidarVector.pushPnts(id0)   #вызовы push и calc не блокирующие
+lidarVector.synchronize(id0)    #только вызов sync блокирует до завершения выполнения функций в очереди по объекту со своим id
 print('CPP Push only id0 time:', time.time() - t0)
 
 t0 = time.time()
