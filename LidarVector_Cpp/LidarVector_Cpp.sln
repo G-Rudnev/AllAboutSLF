@@ -1,0 +1,43 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 16
+VisualStudioVersion = 16.0.31410.357
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{888888A0-9F3D-457C-B088-3A5042F75D52}") = "PyTest", "PyTest\PyTest.pyproj", "{2493F058-64FD-4560-9918-626F0034D9ED}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "LidarVector_Cpp", "LidarVector_Cpp\LidarVector_Cpp.vcxproj", "{1611ECA7-E11C-4EC3-8EF4-E0108094CCD5}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Debug|x64 = Debug|x64
+		Debug|x86 = Debug|x86
+		Release|Any CPU = Release|Any CPU
+		Release|x64 = Release|x64
+		Release|x86 = Release|x86
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{2493F058-64FD-4560-9918-626F0034D9ED}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{2493F058-64FD-4560-9918-626F0034D9ED}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{2493F058-64FD-4560-9918-626F0034D9ED}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{2493F058-64FD-4560-9918-626F0034D9ED}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{2493F058-64FD-4560-9918-626F0034D9ED}.Release|x64.ActiveCfg = Release|Any CPU
+		{2493F058-64FD-4560-9918-626F0034D9ED}.Release|x86.ActiveCfg = Release|Any CPU
+		{1611ECA7-E11C-4EC3-8EF4-E0108094CCD5}.Debug|Any CPU.ActiveCfg = Debug|Win32
+		{1611ECA7-E11C-4EC3-8EF4-E0108094CCD5}.Debug|x64.ActiveCfg = Debug|x64
+		{1611ECA7-E11C-4EC3-8EF4-E0108094CCD5}.Debug|x64.Build.0 = Debug|x64
+		{1611ECA7-E11C-4EC3-8EF4-E0108094CCD5}.Debug|x86.ActiveCfg = Debug|Win32
+		{1611ECA7-E11C-4EC3-8EF4-E0108094CCD5}.Debug|x86.Build.0 = Debug|Win32
+		{1611ECA7-E11C-4EC3-8EF4-E0108094CCD5}.Release|Any CPU.ActiveCfg = Release|Win32
+		{1611ECA7-E11C-4EC3-8EF4-E0108094CCD5}.Release|x64.ActiveCfg = Release|x64
+		{1611ECA7-E11C-4EC3-8EF4-E0108094CCD5}.Release|x64.Build.0 = Release|x64
+		{1611ECA7-E11C-4EC3-8EF4-E0108094CCD5}.Release|x86.ActiveCfg = Release|Win32
+		{1611ECA7-E11C-4EC3-8EF4-E0108094CCD5}.Release|x86.Build.0 = Release|Win32
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {5487DC5F-17BF-4D20-8E55-8027E3DEAD08}
+	EndGlobalSection
+EndGlobal

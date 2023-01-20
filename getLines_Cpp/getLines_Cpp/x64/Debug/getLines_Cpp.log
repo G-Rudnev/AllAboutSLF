@@ -1,4 +1,0 @@
-﻿  getLines.cpp
-C:\Python\Python38\Lib\site-packages\numpy\core\include\numpy\npy_1_7_deprecated_api.h(14): warning Msg: Using deprecated NumPy API, disable it with #define NPY_NO_DEPRECATED_API NPY_1_7_API_VERSION
-     Создается библиотека D:\Code\Python\AllAboutSLF\getLines_Cpp\\..\getLinesCpp.lib и объект D:\Code\Python\AllAboutSLF\getLines_Cpp\\..\getLinesCpp.exp
-  getLines_Cpp.vcxproj -> D:\Code\Python\AllAboutSLF\getLinesCpp.pyd
