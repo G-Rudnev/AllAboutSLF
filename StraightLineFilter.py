@@ -280,16 +280,15 @@ def getLines(linesXY : np.ndarray, pntsXY : np.ndarray, pntsPhi : np.ndarray, Np
             if (not prev_line.isGap):   #безразрывно по точкам 2 линии друг за другом
 
                 prev_line.get_intersection(line, linesXY[:, Nlines])  #получаем точку пересечения текущей и предыдудщей
-                step_dist = norm(pntsXY[:2, fr] - pntsXY[:2, fr - 1])
-                #Далее как раз outliers filter происходит: если точка пересечения двух прямых ближе и к началу следующей и к концу предыущей, 
-                #чем расстояние между этими началом и концом, то берём в набор точку пересечения (написано же полностью обратное условие: x > a or y > b = not (x <= a and y <= b))
-                #А вкратце непосредственно читаем: если точка пересечения далеко, не берём её 
-                if (norm(pntsXY[:2, fr - 1] - linesXY[:2, Nlines]) > step_dist or norm(pntsXY[:2, fr] - linesXY[:2, Nlines]) > step_dist): 
+                interAngle = atan2(linesXY[1, Nlines], linesXY[0, Nlines])
+                #Фильтр взятия/исключения точки пересечения подготовленных прямых. Если угол этой точки между углов кревых точек - берём (в код вписано обратное условие)
+                #Условие составное, т.к. лидары могут крутиться в разные стороны.
+                if ((interAngle > pntsPhi[fr - 1] or interAngle < pntsPhi[fr]) and (interAngle > pntsPhi[fr] or interAngle < pntsPhi[fr - 1])):
 
                     prev_line.get_projection_of_pnt_Ex(pntsXY[:, fr - 1], linesXY[:, Nlines], half_dphi, False)  #закрываем предыдущую
                     Nlines += 1
 
-                    if (step_dist > continuity): #если заданная непрерывность превышена, добавляем неявный разрыв, а если нет, то ломаная просто неразрывно подолжается
+                    if (norm(pntsXY[:2, fr] - pntsXY[:2, fr - 1]) > continuity): #если заданная непрерывность превышена, добавляем неявный разрыв, а если нет, то ломаная просто неразрывно подолжается
                         linesXY[:2, Nlines] = 0.001
                         Nlines += 1
 
