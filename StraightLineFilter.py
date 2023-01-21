@@ -491,6 +491,7 @@ def jitter(event):
 def main():
 
     global Nlines, ax, fig
+    global pntsXY, pntsPhi, pntsBuf, linesXY
 
     pntsXY = np.zeros([3, N])
     pntsPhi = np.zeros([N])
