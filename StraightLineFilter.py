@@ -29,7 +29,7 @@ linesXY = []
 
 deep = 5.0
 cont = 0.6
-half_dphi = 0.03
+half_dphi = 0.3
 tol = 0.1
 
 mess = 0.1
@@ -281,16 +281,15 @@ def getLines(linesXY : np.ndarray, pntsXY : np.ndarray, pntsPhi : np.ndarray, Np
             if (not prev_line.isGap):   #безразрывно по точкам 2 линии друг за другом
 
                 prev_line.get_intersection(line, linesXY[:, Nlines])  #получаем точку пересечения текущей и предыдудщей
-                step_dist = norm(pntsXY[:2, fr] - pntsXY[:2, fr - 1])
-                #Далее как раз outliers filter происходит: если точка пересечения двух прямых ближе и к началу следующей и к концу предыущей, 
-                #чем расстояние между этими началом и концом, то берём в набор точку пересечения (написано же полностью обратное условие: x > a or y > b = not (x <= a and y <= b))
-                #А вкратце непосредственно читаем: если точка пересечения далеко, не берём её 
-                if (norm(pntsXY[:2, fr - 1] - linesXY[:2, Nlines]) > step_dist or norm(pntsXY[:2, fr] - linesXY[:2, Nlines]) > step_dist): 
+                interAngle = atan2(linesXY[1, Nlines], linesXY[0, Nlines])
+                #Фильтр взятия/исключения точки пересечения подготовленных прямых. Если угол этой точки между углов кревых точек - берём (в код вписано обратное условие)
+                #Условие составное, т.к. лидары могут крутиться в разные стороны.
+                if ((interAngle > pntsPhi[fr - 1] or interAngle < pntsPhi[fr]) and (interAngle > pntsPhi[fr] or interAngle < pntsPhi[fr - 1])):
 
                     prev_line.get_projection_of_pnt_Ex(pntsXY[:, fr - 1], linesXY[:, Nlines], half_dphi, False)  #закрываем предыдущую
                     Nlines += 1
 
-                    if (step_dist > continuity): #если заданная непрерывность превышена, добавляем неявный разрыв, а если нет, то ломаная просто неразрывно подолжается
+                    if (norm(pntsXY[:2, fr] - pntsXY[:2, fr - 1]) > continuity): #если заданная непрерывность превышена, добавляем неявный разрыв, а если нет, то ломаная просто неразрывно подолжается
                         linesXY[:2, Nlines] = 0.001
                         Nlines += 1
 
@@ -369,36 +368,6 @@ def getLines(linesXY : np.ndarray, pntsXY : np.ndarray, pntsPhi : np.ndarray, Np
     return Nlines
 
 
-# def firstPnt(pnts : np.ndarray, pntsPhi : np.ndarray) -> None:
-#     pnts[0, 0] = 50.0 + 0.5 * random.rand() - 0.25
-#     pnts[1, 0] = 50.0 + 0.5 * random.rand() - 0.25
-#     pnts[2, 0] = 2.0 * pi * random.rand() - pi
-#     pntsPhi[0] = atan2(pnts[1, 0], pnts[0, 0])
-#
-# def createPnts(pnts : np.ndarray, pntsPhi : np.ndarray, pntsBuf : np.ndarray, N, d0 = 0.1, shape = 0, mess = 0.1) -> None:
-#
-#     i_ang = 0
-#     deltaAng = 0.2 * random.rand() - 0.1
-#
-#     for i in range(1, N):
-#         d = d0 * (1 + random.randn() * mess)
-#         pnts[0, i] = pnts[0, i - 1] + d * cos(pnts[2, i - 1])
-#         pnts[1, i] = pnts[1, i - 1] + d * sin(pnts[2, i - 1])
-#
-#         if (shape == 0):    #polyline
-#             if (random.rand() > 1 - 5.0 / N): # 5 fractures in average
-#                 pnts[2, i] = pnts[2, i - 1] + pi * random.rand() - pi/2
-#                 i_ang = i
-#             else:
-#                 pnts[2, i] = pnts[2, i_ang] * (1 + random.randn() * mess)
-#         elif (shape == 1):  #circle
-#             pnts[2, i] = pnts[2, i - 1] + deltaAng
-#
-#         pntsPhi[i] = atan2(pnts[1, i], pnts[0, i])
-#
-#     pntsBuf[:2, :] = pnts[:2, :]
-
-
 from random import randint, uniform, normalvariate
 
 def create_lidar_pnts(pnts: np.ndarray, pnts_phi: np.ndarray, pntsBuf: np.ndarray, N, mess=0.1, lidar_angle=(pi-0.001), lidar_ax=(0.0, 0.0)) -> np.ndarray:
@@ -473,8 +442,7 @@ def create_lidar_pnts(pnts: np.ndarray, pnts_phi: np.ndarray, pntsBuf: np.ndarra
         pnts[1, i] = pnts[1, i] + dist_noise * cos(beam_angle - pi / 2)
         pnts_phi[i] = atan2(pnts[1, i], pnts[0, i])
 
-    pntsBuf = pnts[:2, :].copy()
-    return pntsBuf
+    return pnts[:2, :].copy()
 
 
 # def drawLoad(xlim = (46, 54), ylim = (46, 54)):
