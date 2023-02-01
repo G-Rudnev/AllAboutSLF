@@ -7,6 +7,7 @@ from numpy.linalg import norm as norm
 import math
 from math import inf as inf
 from math import pi as pi
+from math import pow as pow
 from math import tan as tan
 from math import sin as sin
 from math import cos as cos
@@ -147,7 +148,7 @@ class Lidar():
                 try:
                     self.ser.port='COM' + str(port_n)
                     if self.ser.is_open:
-                        raise Exception(msg='Busy port')
+                        raise Exception(msg = 'Busy port')
                     else:
                         self.ser.open()
 
@@ -185,7 +186,7 @@ class Lidar():
 
             def AngCorrect(dist):
                 if (dist):
-                    return 57.295779513 * math.atan(0.0218 / dist - 0.14037347)  #in degrees
+                    return 57.295779513 * atan(0.0218 / dist - 0.14037347)  #in degrees
                 else:
                     return 0.0
 
@@ -212,7 +213,7 @@ class Lidar():
                 checkCode = self.ser.read(2)
                 buff = self.ser.read(2 * length)
                 for i in range(length):
-                    dists[i] = int.from_bytes(buff[2*i : 2*(i+1)], 'little') / 4000.0
+                    dists[i] = int.from_bytes(buff[2 * i : 2 * (i + 1)], 'little') / 4000.0
 
                 if (n + length >= self.N):   #предупрежжение выхода за пределы массива, размеченного под облако
                     n = 0 
@@ -241,7 +242,7 @@ class Lidar():
                             if (self._xy[0, 0] == 0.0 and self._xy[1, 0] == 0.0):   #лидар отвратительно измеряет углы, если нет дистанции, а нач. и кон. угол очень важны
                                 self._phi[0] = 0.0174532925199432957692369 * (180.0 - (self.phiFrom - self.mountPhi))
                             if (self._xy[0, n - 1] == 0.0 and self._xy[1, n - 1] == 0.0):
-                                self._phi[self._Nlines - 1] = 0.0174532925199432957692369 * (180.0 - (self.phiTo - self.mountPhi))
+                                self._phi[n - 1] = 0.0174532925199432957692369 * (180.0 - (self.phiTo - self.mountPhi))
 
                             self._Nlines = SLF.getLines(self._linesXY, self._xy, self._phi, n, deep = self.deep, continuity = 0.6, half_dphi = 2.0 * self.half_dphi, tolerance = 0.1)
 
@@ -292,8 +293,6 @@ class Lidar():
 
                             n = 0
                             isRound = True
-
-
 
                     if (self.phiFromPositive and (angles[i] >= self.phiFrom and angles[i] < self.phiTo)) or \
                         (not self.phiFromPositive and (angles[i] >= self.phiFrom or angles[i] < self.phiTo)):

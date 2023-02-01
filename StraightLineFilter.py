@@ -255,7 +255,7 @@ def getLines(linesXY : np.ndarray, pntsXY : np.ndarray, pntsPhi : np.ndarray, Np
                         ex_fr = fr + beg # начало ex_line
                         ex_to = to + end # начало следующей за ex_line 
                         extra = True
-                        if beg == 1: #1 точка сначала выпала
+                        if beg == 1: #1 точка от начала выпала
                             line.line[0], line.line[1] = pntsXY[1, fr] / pntsXY[0, fr], 0.0
                             fr = fr - 1
                             to = fr + 1
