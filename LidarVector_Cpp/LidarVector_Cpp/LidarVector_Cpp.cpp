@@ -16,49 +16,59 @@
 #include <condition_variable>
 #include <queue>
 
+#include "Line.h"
+
 using namespace std;
 
 struct Device {
 
     size_t id = -1;
 
-    thread thr; //поток, который будет отвечать за обработку объекта
+    thread thr; //РїРѕС‚РѕРє, РєРѕС‚РѕСЂС‹Р№ Р±СѓРґРµС‚ РѕС‚РІРµС‡Р°С‚СЊ Р·Р° РѕР±СЂР°Р±РѕС‚РєСѓ РѕР±СЉРµРєС‚Р°
 
-    mutex mxCall;   //мьютекс по вызовам и добавлению функций в очередь
-    mutex mxProcess;    //мьютекс по контролю завершения расчетов
+    mutex mxCall;   //РјСЊСЋС‚РµРєСЃ РїРѕ РІС‹Р·РѕРІР°Рј Рё РґРѕР±Р°РІР»РµРЅРёСЋ С„СѓРЅРєС†РёР№ РІ РѕС‡РµСЂРµРґСЊ
+    mutex mxProcess;    //РјСЊСЋС‚РµРєСЃ РїРѕ РєРѕРЅС‚СЂРѕР»СЋ Р·Р°РІРµСЂС€РµРЅРёСЏ СЂР°СЃС‡РµС‚РѕРІ
 
-    condition_variable cvCall; //соответствующие cv
+    condition_variable cvCall; //СЃРѕРѕС‚РІРµС‚СЃС‚РІСѓСЋС‰РёРµ cv
     condition_variable cvProcess;
 
-    bool process = true;    //флаг завершения расчетов
+    bool process = true;    //С„Р»Р°Рі Р·Р°РІРµСЂС€РµРЅРёСЏ СЂР°СЃС‡РµС‚РѕРІ
 
-    bool alive = true;  //флаг жизни потока thr
+    bool alive = true;  //С„Р»Р°Рі Р¶РёР·РЅРё РїРѕС‚РѕРєР° thr
 
-    queue<void (Device::*) ()> foosQueue;   //очередь функций объекта
+    queue<void (Device::*) ()> foosQueue;   //РѕС‡РµСЂРµРґСЊ С„СѓРЅРєС†РёР№ РѕР±СЉРµРєС‚Р°
 
     size_t Npnts = 0;  //in variable
     size_t Nlines = 0; //out variable
 
-    double par0 = 0.0;  //параметры
+    //double par0 = 0.0;  //РїР°СЂР°РјРµС‚СЂС‹
+    double deep = 0.0;
+    double continuity = 0.0;
+    double half_dPhi = 0.0;
+    double tolerance = 0.0;
 //  ...
 
-    PyArrayObject* pyPntsXY = nullptr;  //указатели на нужные объекты питона
+    PyArrayObject* pyPntsXY = nullptr;  //СѓРєР°Р·Р°С‚РµР»Рё РЅР° РЅСѓР¶РЅС‹Рµ РѕР±СЉРµРєС‚С‹ РїРёС‚РѕРЅР°
     PyArrayObject* pyPntsPhi = nullptr;
     PyArrayObject* pyLinesXY = nullptr;
 
-    double** pntsXY = nullptr;  //соответствующие массивы плюсовой памяти
+    double** pntsXY = nullptr;  //СЃРѕРѕС‚РІРµС‚СЃС‚РІСѓСЋС‰РёРµ РјР°СЃСЃРёРІС‹ РїР»СЋСЃРѕРІРѕР№ РїР°РјСЏС‚Рё
     double* pntsPhi = nullptr;
     double** linesXY = nullptr;
+
 
     Device() = default;
 
     Device (PyArrayObject* const pyPntsXY, PyArrayObject* const pyPntsPhi, PyArrayObject* const pyLinesXY, size_t Npnts, PyObject* pyParams, size_t id) : 
-        pyPntsXY(pyPntsXY), pyPntsPhi(pyPntsPhi), pyLinesXY(pyLinesXY), Npnts(Npnts), id(id)
+        pyPntsXY(pyPntsXY), pyPntsPhi(pyPntsPhi), pyLinesXY(pyLinesXY), Npnts(Npnts), id(id),
+        deep(5.0), continuity(0.6), half_dPhi(0.3), tolerance(0.1)
     {
 
         if (!setParams(pyParams)) {
-            throw new logic_error("");  //память еще не выделилась, можно не заморачиваться с чисткой
+            throw new logic_error("");  //РїР°РјСЏС‚СЊ РµС‰Рµ РЅРµ РІС‹РґРµР»РёР»Р°СЃСЊ, РјРѕР¶РЅРѕ РЅРµ Р·Р°РјРѕСЂР°С‡РёРІР°С‚СЊСЃСЏ СЃ С‡РёСЃС‚РєРѕР№
         }
+
+        //setParams(pyParams);
 
         pntsXY = new double* [2];
         linesXY = new double* [2];
@@ -66,31 +76,33 @@ struct Device {
             pntsXY[i] = new double[Npnts];
             linesXY[i] = new double[Npnts];
         }
+
+
         pntsPhi = new double[Npnts];
 
-        thr = thread([this]     //запускаем поток
+        thr = thread([this]     //Р·Р°РїСѓСЃРєР°РµРј РїРѕС‚РѕРє
             {
                 while (this->alive) {
 
                     for (;;) {
 
                         unique_lock lk0(this->mxCall);
-                        this->cvCall.wait(lk0, [this] {return !this->alive || this->foosQueue.size(); });   //ждун вызова через pyFun
+                        this->cvCall.wait(lk0, [this] {return !this->alive || this->foosQueue.size(); });   //Р¶РґСѓРЅ РІС‹Р·РѕРІР° С‡РµСЂРµР· pyFun
                         
                         if (this->alive) {
 
-                            auto foo = this->foosQueue.front(); //берем функцию с края очереди
+                            auto foo = this->foosQueue.front(); //Р±РµСЂРµРј С„СѓРЅРєС†РёСЋ СЃ РєСЂР°СЏ РѕС‡РµСЂРµРґРё
 
                             if (foo != nullptr)
-                                (this->*foo) ();    //вызываем её
+                                (this->*foo) ();    //РІС‹Р·С‹РІР°РµРј РµС‘
 
-                            this->foosQueue.pop();  //удаляем из очереди
+                            this->foosQueue.pop();  //СѓРґР°Р»СЏРµРј РёР· РѕС‡РµСЂРµРґРё
 
                             if (this->foosQueue.empty()) {
                                 unique_lock lk1(this->mxProcess);   
-                                this->process = true;   //меняем состояние для cv процесса, функция pyFun<nullptr>, т.е. synchronize() из питона, сможет завершиться
+                                this->process = true;   //РјРµРЅСЏРµРј СЃРѕСЃС‚РѕСЏРЅРёРµ РґР»СЏ cv РїСЂРѕС†РµСЃСЃР°, С„СѓРЅРєС†РёСЏ pyFun<nullptr>, С‚.Рµ. synchronize() РёР· РїРёС‚РѕРЅР°, СЃРјРѕР¶РµС‚ Р·Р°РІРµСЂС€РёС‚СЊСЃСЏ
                                 lk1.unlock();
-                                cvProcess.notify_one(); //уведомляем cv о завершении расчетов
+                                cvProcess.notify_one(); //СѓРІРµРґРѕРјР»СЏРµРј cv Рѕ Р·Р°РІРµСЂС€РµРЅРёРё СЂР°СЃС‡РµС‚РѕРІ
 
                                 cvCall.notify_one();
                                 lk0.unlock();
@@ -111,20 +123,20 @@ struct Device {
     }
 
     ~Device() {
-        //НЕ ОСОБО НУЖНОЕ УДОВОЛЬСТВИЕ, НО ЕСТЬ
-        //Питона крашит модули весьма кусочно и не консистентно, поэтому может даже подвесить какую-нибудь работающую функцию.
-        //Нам не сильно это важно, так как предполагается существование объекта все время работы программы, ну, или почти все.
-        //Тем не менее, если разрабатывать quit() этот деструктор пригодится.
+        //РќР• РћРЎРћР‘Рћ РќРЈР–РќРћР• РЈР”РћР’РћР›Р¬РЎРўР’РР•, РќРћ Р•РЎРўР¬
+        //РџРёС‚РѕРЅР° РєСЂР°С€РёС‚ РјРѕРґСѓР»Рё РІРµСЃСЊРјР° РєСѓСЃРѕС‡РЅРѕ Рё РЅРµ РєРѕРЅСЃРёСЃС‚РµРЅС‚РЅРѕ, РїРѕСЌС‚РѕРјСѓ РјРѕР¶РµС‚ РґР°Р¶Рµ РїРѕРґРІРµСЃРёС‚СЊ РєР°РєСѓСЋ-РЅРёР±СѓРґСЊ СЂР°Р±РѕС‚Р°СЋС‰СѓСЋ С„СѓРЅРєС†РёСЋ.
+        //РќР°Рј РЅРµ СЃРёР»СЊРЅРѕ СЌС‚Рѕ РІР°Р¶РЅРѕ, С‚Р°Рє РєР°Рє РїСЂРµРґРїРѕР»Р°РіР°РµС‚СЃСЏ СЃСѓС‰РµСЃС‚РІРѕРІР°РЅРёРµ РѕР±СЉРµРєС‚Р° РІСЃРµ РІСЂРµРјСЏ СЂР°Р±РѕС‚С‹ РїСЂРѕРіСЂР°РјРјС‹, РЅСѓ, РёР»Рё РїРѕС‡С‚Рё РІСЃРµ.
+        //РўРµРј РЅРµ РјРµРЅРµРµ, РµСЃР»Рё СЂР°Р·СЂР°Р±Р°С‚С‹РІР°С‚СЊ quit() СЌС‚РѕС‚ РґРµСЃС‚СЂСѓРєС‚РѕСЂ РїСЂРёРіРѕРґРёС‚СЃСЏ.
 
         cout << "Device " << id << " destructor starts" << endl;
 
-        unique_lock lk1(mxCall);    //ждет завершения вызова pyFun
+        unique_lock lk1(mxCall);    //Р¶РґРµС‚ Р·Р°РІРµСЂС€РµРЅРёСЏ РІС‹Р·РѕРІР° pyFun
 
         unique_lock lk0(mxProcess);
-        cvProcess.wait(lk0, [this] {return this->process; }); //ждет завершения расчетной очереди функций
+        cvProcess.wait(lk0, [this] {return this->process; }); //Р¶РґРµС‚ Р·Р°РІРµСЂС€РµРЅРёСЏ СЂР°СЃС‡РµС‚РЅРѕР№ РѕС‡РµСЂРµРґРё С„СѓРЅРєС†РёР№
         lk0.unlock();
 
-        alive = false;  //выключает петлю потока
+        alive = false;  //РІС‹РєР»СЋС‡Р°РµС‚ РїРµС‚Р»СЋ РїРѕС‚РѕРєР°
         lk1.unlock();
         cvCall.notify_all();
 
@@ -135,19 +147,24 @@ struct Device {
 
     bool setParams(PyObject* pyParams) {
 
-        //Можно и getParams() сделать, но пока это необязательно
+        //РњРѕР¶РЅРѕ Рё getParams() СЃРґРµР»Р°С‚СЊ, РЅРѕ РїРѕРєР° СЌС‚Рѕ РЅРµРѕР±СЏР·Р°С‚РµР»СЊРЅРѕ
 
         if (!PyTuple_Check(pyParams)) {
             cerr << "Parameters should be in a tuple" << endl;
             return false;
         }
 
-        if (PyTuple_GET_SIZE(pyParams) != 1) {  //кол-во параметров, не забываем менять
-            cerr << "There should be 1 parameter in a tuple" << endl;
+        if (PyTuple_GET_SIZE(pyParams) != 4) {  //РєРѕР»-РІРѕ РїР°СЂР°РјРµС‚СЂРѕРІ, РЅРµ Р·Р°Р±С‹РІР°РµРј РјРµРЅСЏС‚СЊ
+            cerr << "There should be 4 parameters in a tuple" << endl;
             return false;
         }
 
-        par0 = PyFloat_AsDouble(PyTuple_GetItem(pyParams, 0));  //здесь столько параметров, колько нужно надо прописать
+        //par0 = PyFloat_AsDouble(PyTuple_GetItem(pyParams, 0));  //Р·РґРµСЃСЊ СЃС‚РѕР»СЊРєРѕ РїР°СЂР°РјРµС‚СЂРѕРІ, РєРѕР»СЊРєРѕ РЅСѓР¶РЅРѕ РЅР°РґРѕ РїСЂРѕРїРёСЃР°С‚СЊ
+        deep = PyFloat_AsDouble(PyTuple_GetItem(pyParams, 0));
+        continuity = PyFloat_AsDouble(PyTuple_GetItem(pyParams, 1));
+        half_dPhi = PyFloat_AsDouble(PyTuple_GetItem(pyParams, 2));
+        tolerance = PyFloat_AsDouble(PyTuple_GetItem(pyParams, 3));
+
 
         if (PyErr_Occurred()) {
             cerr << "Wrong type inside the parameters" << endl;
@@ -158,57 +175,347 @@ struct Device {
         return true;
     }
 
-    inline void pushPnts() {
+    //inline void pushPnts() {
 
-        //СОВЕРШЕННО НЕ ОБЯЗАТЕЛЬНО ПОЛЬЗОВАТЬ PUSH ФУКНЦИЮ И РАСЧЕТНУЮ ОТДЕЛЬНО, МОЖНО ИСХИТРИТЬСЯ И НА ОДНУ ОБЩУЮ,
-        //УКАЗАТЕЛИ НА САМИ ДАННЫЕ (pXY_0r, ..) МОЖНО И В ОБЪЕКТ ДОБАВИТЬ, ОБЕСПЕЧИВАЯ В ДАЛЬНЕЙШЕМ НЕИЗМЕННОСТЬ АЛЛОКАЦИИ В ПИТОНЕ.
-        //БЕЗ КОПИРОВАНИЯ ЗДЕСЬ В ПУШЕ, А С РАСЧЕТАМИ НАПРЯМУЮ БУДЕТ МАКСИМАЛЬНО БЫСТРО - НУЖНО СМОТРЕТЬ ПО РЕАЛИЗАЦИИ КАК ВЫХОДИТ УДОБНЕЕ.
+    //    //РЎРћР’Р•Р РЁР•РќРќРћ РќР• РћР‘РЇР—РђРўР•Р›Р¬РќРћ РџРћР›Р¬Р—РћР’РђРўР¬ PUSH Р¤РЈРљРќР¦РР® Р Р РђРЎР§Р•РўРќРЈР® РћРўР”Р•Р›Р¬РќРћ, РњРћР–РќРћ РРЎРҐРРўР РРўР¬РЎРЇ Р РќРђ РћР”РќРЈ РћР‘Р©РЈР®,
+    //    //РЈРљРђР—РђРўР•Р›Р РќРђ РЎРђРњР Р”РђРќРќР«Р• (pXY_0r, ..) РњРћР–РќРћ Р Р’ РћР‘РЄР•РљРў Р”РћР‘РђР’РРўР¬, РћР‘Р•РЎРџР•Р§РР’РђРЇ Р’ Р”РђР›Р¬РќР•Р™РЁР•Рњ РќР•РР—РњР•РќРќРћРЎРўР¬ РђР›Р›РћРљРђР¦РР Р’ РџРРўРћРќР•.
+    //    //Р‘Р•Р— РљРћРџРР РћР’РђРќРРЇ Р—Р”Р•РЎР¬ Р’ РџРЈРЁР•, Рђ РЎ Р РђРЎР§Р•РўРђРњР РќРђРџР РЇРњРЈР® Р‘РЈР”Р•Рў РњРђРљРЎРРњРђР›Р¬РќРћ Р‘Р«РЎРўР Рћ - РќРЈР–РќРћ РЎРњРћРўР Р•РўР¬ РџРћ Р Р•РђР›РР—РђР¦РР РљРђРљ Р’Р«РҐРћР”РРў РЈР”РћР‘РќР•Р•.
 
-        //cout << "pushPnts() on id " << id << endl;
+    //    //cout << "pushPnts() on id " << id << endl;
 
-        double* pXY_0r = (double*)PyArray_DATA(pyPntsXY);   //0-й ряд
-        double* pXY_1r = pXY_0r + Npnts;                    //1-й ряд
+    //    double* pXY_0r = (double*)PyArray_DATA(pyPntsXY);   //0-Р№ СЂСЏРґ
+    //    double* pXY_1r = pXY_0r + Npnts;                    //1-Р№ СЂСЏРґ
+    //    double* pPhi = (double*)PyArray_DATA(pyPntsPhi);
+
+    //    for (size_t i = 0; i < Npnts; i++) {
+    //        pntsXY[0][i] = *(pXY_0r + i);
+    //        pntsXY[1][i] = *(pXY_1r + i);
+    //        pntsPhi[i] = *(pPhi + i);
+    //    }
+
+    //    //РЎ РµР¶РµРєСЂР°С‚РЅС‹Рј Р·Р°РїСЂРѕСЃРѕРј (РјРµРґР»РµРЅРЅРµРµ)
+    //    //for (size_t i = 0; i < Npnts; i++) {
+    //    //    pntsXY[0][i] = *(double*)PyArray_GETPTR2(pyPntsXY, 0, i);
+    //    //    pntsXY[1][i] = *(double*)PyArray_GETPTR2(pyPntsXY, 1, i);
+    //    //    pntsPhi[i] = *(double*)PyArray_GETPTR1(pyPntsPhi, i);
+    //    //}
+    //}
+
+    void calcLines() {
+        //РќСѓР¶РЅРѕ РµС‰Рµ РІС‹Р±СЂР°СЃС‹РІР°С‚СЊ Nlines, РјРѕР¶РЅРѕ С‡РµСЂРµР· СЃРІСЏР·Р°РЅРЅС‹Р№ pyParams.
+        //Р Р°СЃС‡РµС‚РѕРІ РјР°Р»Рѕ РЅР° РїСЂРѕС‚РѕС‚РёРїРµ - РІС‹РёРіСЂС‹С€ РїРѕ РІСЂРµРјРµРЅРё РµС‰С‘ РЅРµ С‚Р°РєРѕР№ Р±РѕР»СЊС€РѕР№.
+ 
+        //cout << "pullLinesXY() on id " << id << endl;
+
+        // Р­С‚Рѕ СЏ РїСЂРѕСЃС‚Рѕ СЃРєРѕРїРёСЂРѕРІР°Р» РёР· pushPnts
+        // РџРѕР»СѓС‡РµРЅРёРµ С‚РѕС‡РµРє РёР· Python СЃСЋРґР°
+        double* pXY_0r = (double*)PyArray_DATA(pyPntsXY);   //0-Р№ СЂСЏРґ
+        double* pXY_1r = pXY_0r + Npnts;                    //1-Р№ СЂСЏРґ
         double* pPhi = (double*)PyArray_DATA(pyPntsPhi);
 
-        for (size_t i = 0; i < Npnts; i++) {
+        for (size_t i = 0; i < Npnts; i++) 
+        {
             pntsXY[0][i] = *(pXY_0r + i);
             pntsXY[1][i] = *(pXY_1r + i);
             pntsPhi[i] = *(pPhi + i);
         }
 
-        //С ежекратным запросом (медленнее)
-        //for (size_t i = 0; i < Npnts; i++) {
-        //    pntsXY[0][i] = *(double*)PyArray_GETPTR2(pyPntsXY, 0, i);
-        //    pntsXY[1][i] = *(double*)PyArray_GETPTR2(pyPntsXY, 1, i);
-        //    pntsPhi[i] = *(double*)PyArray_GETPTR1(pyPntsPhi, i);
-        //}
-    }
-
-    void calcLines() {
-        //Нужно еще выбрасывать Nlines, можно через связанный pyParams.
-        //Расчетов мало на прототипе - выигрыш по времени ещё не такой большой.
- 
-        //cout << "pullLinesXY() on id " << id << endl;
-
-        Nlines = Npnts;
         double* pLines_0r = (double*)PyArray_DATA(pyLinesXY);
-        double* pLines_1r = pLines_0r + Nlines;
+        double* pLines_1r = pLines_0r + Npnts;
 
-        for (size_t i = 0; i < Nlines; i++) {
-            *(pLines_0r + i) = exp(pntsXY[0][i] * pntsXY[0][i] * pntsPhi[i]);
-            *(pLines_1r + i) = exp(pntsXY[1][i] * pntsXY[1][i] * pntsPhi[i]);
+        //// Р—РђРњР•РќРРўР¬
+        //for (size_t i = 0; i < Nlines; i++) {
+        //    *(pLines_0r + i) = exp(pntsXY[0][i] * pntsXY[0][i] * pntsPhi[i]);
+        //    *(pLines_1r + i) = exp(pntsXY[1][i] * pntsXY[1][i] * pntsPhi[i]);
+        //}
+
+        this->half_dPhi *= 0.0174532925199432957692369; // ?????????????????????
+        //cout << half_dPhi << endl;
+
+        size_t fr = 0;
+        size_t to = 0;
+        size_t ex_fr = 0;
+        size_t ex_to = 0;
+
+        Line* line = new Line();
+        Line* prev_line = new Line();
+        Line* ex_line = new Line();
+
+        bool extra = false;
+
+        double** ex_pnt = new double* [2]; //{0.0, 0.0};
+
+        Nlines = 0;
+
+        size_t* edges; // РґР»СЏ СЂРµР·СѓР»СЊС‚Р°С‚Р° setWithLMS
+        vector<double>* segPntsXY; // С‚РѕС‡РєРё СЃС„РѕСЂРјРёСЂРѕРІР°РЅРЅРѕРіРѕ РѕС‚СЂРµР·РєР°
+
+        // ///////////////////////////////////////////
+
+        while (fr < Npnts) 
+        {
+            // С„РѕСЂРјРёСЂРѕРІР°РЅРёРµ СЃРµРіРјРµРЅС‚Р°
+            if (!extra)
+            {
+                if ((pntsXY[0][fr] == 0.0) && (pntsXY[1][fr] == 0.0))
+                {
+                    line->isGap = true;
+                    to = fr + 1;
+                    while ((to < Npnts) && ((pntsXY[0][to] == 0.0) && pntsXY[1][to] == 0.0))
+                        to++;
+                }
+
+                else
+                {
+                    line->isGap = false;
+                    line->setAsTangentWithOnePnt(new double[] { pntsXY[0][fr], pntsXY[1][fr] }); 
+                    to = fr + 1;
+                    //double dd = sqrt(pow(pntsXY[0][to], 2) + pow(pntsXY[1][to], 2)) - sqrt(pow(pntsXY[0][fr], 2) + pow(pntsXY[1][fr], 2));
+                    //sqrt(pow(pntsXY[0][to] - pntsXY[0][fr], 2) + pow(pntsXY[1][to] - pntsXY[1][fr], 2))
+                    if ((to < Npnts) && (pntsXY[0][to] != 0.0 || pntsXY[1][to] != 0.0) && (sqrt(pow(pntsXY[0][to] - pntsXY[0][fr], 2) + pow(pntsXY[1][to] - pntsXY[1][fr], 2)) <= continuity))
+                    {
+                        line->setWithTwoPnts(new double[] { pntsXY[0][fr], pntsXY[1][fr] }, new double[] { pntsXY[0][to], pntsXY[1][to] });
+                        to++;
+                        while ((to < Npnts) && (pntsXY[0][to] != 0.0 || pntsXY[1][to] != 0) && (line->getDistanceToPnt(new double[] { pntsXY[0][to], pntsXY[1][to] }) <= tolerance))
+                        {
+                            to++;
+                            if ((to - fr) % 2 == 0)
+                            {
+                                size_t mid_to = fr + (size_t)(floor((to - fr) / 2.0));
+                                line->setWithTwoPnts(new double[] { pntsXY[0][fr], pntsXY[1][fr] }, new double[] { pntsXY[0][mid_to], pntsXY[1][mid_to] });
+                            }
+                        }
+                    }
+
+                    if (to - fr > 2)
+                    {
+                        segPntsXY = new vector<double>[2];
+                        for (int i = 0; i < 2; i++)
+                            //segPntsXY[i].reserve(to - fr);
+                            segPntsXY[i] = vector<double> (to - fr);
+
+                        for (size_t i = 0; i < to - fr; i++)
+                        {
+                            segPntsXY[0][i] = pntsXY[0][fr + i];
+                            segPntsXY[1][i] = pntsXY[1][fr + i];
+                        }
+
+                        edges = line->setWithLMS(segPntsXY);
+
+                        if (edges[0] != 0)
+                        {
+                            ex_line = line->copy();
+                            ex_fr = fr + edges[0];
+                            ex_to = to + edges[1];
+                            extra = true;
+                            if (edges[0] == 1)
+                            {
+                                line->line[0] = pntsXY[1][fr] / pntsXY[0][fr];
+                                line->line[1] = 0.0;
+                                fr--;
+                                to = fr + 1;
+                            }
+
+                            else if (edges[0] == 2)
+                            {
+                                line->setWithTwoPnts(new double[] { pntsXY[0][fr], pntsXY[1][fr] }, new double[] { pntsXY[0][fr + 1], pntsXY[1][fr + 1] });
+                                to = fr + 1;
+                            }
+
+                            else
+                            {
+                                segPntsXY = new vector<double>[2];
+                                for (int i = 0; i < 2; i++)
+                                    //segPntsXY[i].reserve(edges[0]);
+                                    segPntsXY[i] = vector<double> (edges[0]);
+
+                                for (size_t i = 0; i < edges[0]; i++)
+                                {
+                                    segPntsXY[0][i] = pntsXY[0][fr + i];
+                                    segPntsXY[1][i] = pntsXY[1][fr + i];
+                                }
+
+                                edges = line->setWithLMS(segPntsXY, false);
+                                to = fr + edges[0] - 1;
+                            }
+                        }
+
+                        else
+                            to += edges[1];
+                    }
+                }
+            }
+
+            else
+            {
+                line = ex_line->copy();
+                fr = ex_fr;
+                to = ex_to;
+                extra = false;
+            }
+
+            //cout << "CPP " << fr << " " << to << endl;
+
+            // РёРЅС‚РµРіСЂР°С†РёСЏ СЃРµРіРјРµРЅС‚Р°
+            if (!line->isGap)
+            {
+                if (!prev_line->isGap)
+                {
+                    prev_line->getIntersection(line, new double* [] { pLines_0r + Nlines, pLines_1r + Nlines });
+                    double interAngle = atan2(linesXY[1][Nlines], linesXY[0][Nlines]);
+                    if (((interAngle > pntsPhi[fr - 1]) || (interAngle < pntsPhi[fr])) && ((interAngle > pntsPhi[fr]) || (interAngle < pntsPhi[fr - 1])))
+                    {
+                        prev_line->getProjectionOfPntEx(new double[] { pntsXY[0][fr - 1], pntsXY[1][fr - 1] }, new double*[] { pLines_0r + Nlines, pLines_1r + Nlines }, half_dPhi, false);
+                        Nlines++;
+                        if (sqrt(pow(pntsXY[0][fr] - pntsXY[0][fr - 1], 2) + pow(pntsXY[1][fr] - pntsXY[1][fr - 1], 2)) > continuity)
+                        {
+                            *(pLines_0r + Nlines) = 0.001;
+                            *(pLines_1r + Nlines) = 0.001;
+                            Nlines++;
+                        }
+
+                        prev_line->isGap = true;
+                    }
+
+                    else
+                        Nlines++;
+                }
+
+                if (prev_line->isGap)
+                {
+                    line->getProjectionOfPntEx(new double[] { pntsXY[0][fr], pntsXY[1][fr] }, new double* [] { pLines_0r + Nlines, pLines_1r + Nlines }, half_dPhi, true);
+                    Nlines++;
+                }
+
+                if (to >= Npnts)
+                {
+                    line->getProjectionOfPntEx(new double[] { pntsXY[0][to - 1], pntsXY[1][to - 1] }, new double* [] { pLines_0r + Nlines, pLines_1r + Nlines }, half_dPhi, false);
+                    Nlines++;
+                }
+            }
+
+            else
+            {
+                if (fr == 0)
+                {
+                    if (to < Npnts)
+                    {
+                        ex_line->line[0] = tan(pntsPhi[0]);
+                        ex_line->line[1] = 0.0;
+                        ex_line->getProjectionOfPnt(new double[] { pntsXY[0][to], pntsXY[1][to] }, new double* [] { pLines_0r, pLines_1r});
+                        *(pLines_0r + 1) = 0.0;
+                        *(pLines_1r + 1) = 0.0;
+                        Nlines = 2;
+                    }
+
+                    else
+                    {
+                        *pLines_0r = deep * cos(pntsPhi[0]);
+                        *pLines_1r = deep * sin(pntsPhi[0]);
+                        *(pLines_0r + 1) = 0.0;
+                        *(pLines_1r + 1) = 0.0;
+                        *(pLines_0r + 2) = deep * cos(pntsPhi[Npnts - 1]);
+                        *(pLines_1r + 2) = deep * sin(pntsPhi[Npnts - 1]);
+                        Nlines = 3;
+                    }
+                }
+
+                else
+                {
+                    prev_line->getProjectionOfPntEx(new double[] { pntsXY[0][fr - 1], pntsXY[1][fr - 1] }, new double* [] { pLines_0r + Nlines, pLines_1r + Nlines }, half_dPhi, false);
+                    Nlines++;
+
+                    if (to >= Npnts)
+                    {
+                        *(pLines_0r + Nlines) = 0.0;
+                        *(pLines_1r + Nlines) = 0.0;
+                        Nlines++;
+
+                        ex_line->line[0] = tan(pntsPhi[Npnts - 1]);
+                        ex_line->line[1] = 0.0;
+                        ex_line->getProjectionOfPnt(new double[] { pntsXY[0][fr - 1], pntsXY[1][fr - 1] }, new double* [] { pLines_0r + Nlines, pLines_1r + Nlines});
+                        Nlines++;
+                    }
+
+                    //dd = sqrt(pow(pntsXY[0][to], 2) + pow(pntsXY[1][to], 2)) - sqrt(pow(pntsXY[0][fr], 2) + pow(pntsXY[1][fr], 2));
+                    else if (sqrt(pow(pntsXY[0][to] - pntsXY[0][fr - 1], 2) + pow(pntsXY[1][to] - pntsXY[1][fr - 1], 2)) > continuity)
+                    {
+                        ex_line->line[0] = tan(pntsPhi[fr - 1]);
+                        ex_line->line[1] = 0.0;
+                        ex_line->getProjectionOfPnt(new double[] { pntsXY[0][to], pntsXY[1][to] }, new double* [] { ex_pnt[0], ex_pnt[1]});
+                        
+                        if ((sqrt(pow(*ex_pnt[0], 2) + pow(*ex_pnt[1], 2)) > sqrt(pow(pntsXY[0][fr - 1], 2) + pow(pntsXY[1][fr - 1], 2))) && (*ex_pnt[0] * pntsXY[0][fr - 1] > 0.0 or *ex_pnt[1] * pntsXY[1][fr - 1] > 0.0))
+                        {
+                            *(pLines_0r + Nlines) = 0.001;
+                            *(pLines_1r + Nlines) = 0.001;
+                            Nlines++;
+
+                            *(pLines_0r + Nlines) = *ex_pnt[0];
+                            *(pLines_1r + Nlines) = *ex_pnt[1];
+                            Nlines++;
+
+                            *(pLines_0r + Nlines) = 0.0;
+                            *(pLines_1r + Nlines) = 0.0;
+                            Nlines++;
+                        }
+
+                        else
+                        {
+                            ex_line->line[0] = tan(pntsPhi[to]);
+                            ex_line->line[1] = 0.0;
+                            ex_line->getProjectionOfPnt(new double[] { pntsXY[0][fr - 1], pntsXY[1][fr - 1] }, new double* [] { ex_pnt[0], ex_pnt[1]});
+
+                            if ((sqrt(pow(*ex_pnt[0], 2) + pow(*ex_pnt[1], 2)) > sqrt(pow(pntsXY[0][to], 2) + pow(pntsXY[1][to], 2))) && (*ex_pnt[0] * pntsXY[0][to] > 0.0 or *ex_pnt[1] * pntsXY[1][to] > 0.0))
+                            {
+                                *(pLines_0r + Nlines) = 0.0;
+                                *(pLines_1r + Nlines) = 0.0;
+                                Nlines++;
+
+                                *(pLines_0r + Nlines) = *ex_pnt[0];
+                                *(pLines_1r + Nlines) = *ex_pnt[1];
+                                Nlines++;
+
+                                *(pLines_0r + Nlines) = 0.001;
+                                *(pLines_1r + Nlines) = 0.001;
+                                Nlines++;
+                            }
+
+                            else
+                            {
+                                *(pLines_0r + Nlines) = 0.0;
+                                *(pLines_1r + Nlines) = 0.0;
+                                Nlines++;
+                            }
+                        }
+                    }
+                }
+            }
+            //cout << "Nlines = " << Nlines << endl;
+            prev_line = line->copy();
+            fr = to;
+            //cout << "Fr = " << fr << endl;
+
         }
 
-        //с ежекратным запросом (медленнее)
+
+        //СЃ РµР¶РµРєСЂР°С‚РЅС‹Рј Р·Р°РїСЂРѕСЃРѕРј (РјРµРґР»РµРЅРЅРµРµ)
         //for (size_t i = 0; i < Nlines; i++) {
         //    *(double*)PyArray_GETPTR2(pyLinesXY, 0, i) = pntsXY[0][i] * pntsXY[0][i] * pntsPhi[i];
         //    *(double*)PyArray_GETPTR2(pyLinesXY, 1, i) = pntsXY[1][i] * pntsXY[1][i] * pntsPhi[i];
         //}
+
+        //lil->lol(); // РїСЂРѕР±РЅР°СЏ РјРµС‚РѕС‡РєР°
+        //return PyLong_FromSize_t(0);
     }
+
+    //void getNlines() {
+    //    //return PyLong_FromSize_t(this->Nlines);
+    //}
 };
 
-//Основной глобальный контейнер устройств (указателей на них)
-vector<unique_ptr<Device>> devices; //с unique_ptr будет вывзываться деструктор по завершению отдельного устройства
+
+//РћСЃРЅРѕРІРЅРѕР№ РіР»РѕР±Р°Р»СЊРЅС‹Р№ РєРѕРЅС‚РµР№РЅРµСЂ СѓСЃС‚СЂРѕР№СЃС‚РІ (СѓРєР°Р·Р°С‚РµР»РµР№ РЅР° РЅРёС…)
+vector<unique_ptr<Device>> devices; //СЃ unique_ptr Р±СѓРґРµС‚ РІС‹РІР·С‹РІР°С‚СЊСЃСЏ РґРµСЃС‚СЂСѓРєС‚РѕСЂ РїРѕ Р·Р°РІРµСЂС€РµРЅРёСЋ РѕС‚РґРµР»СЊРЅРѕРіРѕ СѓСЃС‚СЂРѕР№СЃС‚РІР°
 
 template<void (Device::* F) ()>
 PyObject* pyFun(PyObject*, PyObject* o) {
@@ -220,16 +527,21 @@ PyObject* pyFun(PyObject*, PyObject* o) {
             Device* dev = devices[id].get();
 
             if (F != nullptr) {
+                /*if (F == &(Device::getNlines)) {
+                    return PyLong_FromSize_t(dev->Nlines);
+                }*/
                 unique_lock lk(dev->mxCall);
-                dev->process = false;   //блочим флаг завершенных расчетов
-                dev->foosQueue.push(F);     //добавляем функцию в очередь
+                dev->process = false;   //Р±Р»РѕС‡РёРј С„Р»Р°Рі Р·Р°РІРµСЂС€РµРЅРЅС‹С… СЂР°СЃС‡РµС‚РѕРІ
+                dev->foosQueue.push(F);     //РґРѕР±Р°РІР»СЏРµРј С„СѓРЅРєС†РёСЋ РІ РѕС‡РµСЂРµРґСЊ
                 lk.unlock();
-                dev->cvCall.notify_one();   //уведомляем, проверочная функция в wait запрашивает size() jxthtlb
+                dev->cvCall.notify_one();   //СѓРІРµРґРѕРјР»СЏРµРј, РїСЂРѕРІРµСЂРѕС‡РЅР°СЏ С„СѓРЅРєС†РёСЏ РІ wait Р·Р°РїСЂР°С€РёРІР°РµС‚ size() jxthtlb
             }
             else {
-                unique_lock lk(dev->mxProcess); //синхронизация, здесь он ждет завершения расчетов по флагу
+                unique_lock lk(dev->mxProcess); //СЃРёРЅС…СЂРѕРЅРёР·Р°С†РёСЏ, Р·РґРµСЃСЊ РѕРЅ Р¶РґРµС‚ Р·Р°РІРµСЂС€РµРЅРёСЏ СЂР°СЃС‡РµС‚РѕРІ РїРѕ С„Р»Р°РіСѓ
                 dev->cvProcess.wait(lk, [dev] {return dev->process; });
                 lk.unlock();
+                /*if(F == *(dev->calcLines)) */
+                return PyLong_FromSize_t(dev->Nlines);
             }
 
             return PyLong_FromLong(0);
@@ -242,17 +554,19 @@ PyObject* pyFun(PyObject*, PyObject* o) {
     return PyLong_FromLong(-1);
 }
 
+
 PyObject* init(PyObject*, PyObject* o) {
 
-    //После завершения расчетных функций, нужно задуматься и о quit() и об reinit() - для полноты картины, тут и деструкторы понадобятся.
-    //Здесь - проверки, проверки и создание объекта, если все ок
-    //Возвращаает в питон id
+    //РџРѕСЃР»Рµ Р·Р°РІРµСЂС€РµРЅРёСЏ СЂР°СЃС‡РµС‚РЅС‹С… С„СѓРЅРєС†РёР№, РЅСѓР¶РЅРѕ Р·Р°РґСѓРјР°С‚СЊСЃСЏ Рё Рѕ quit() Рё РѕР± reinit() - РґР»СЏ РїРѕР»РЅРѕС‚С‹ РєР°СЂС‚РёРЅС‹, С‚СѓС‚ Рё РґРµСЃС‚СЂСѓРєС‚РѕСЂС‹ РїРѕРЅР°РґРѕР±СЏС‚СЃСЏ.
+    //Р—РґРµСЃСЊ - РїСЂРѕРІРµСЂРєРё, РїСЂРѕРІРµСЂРєРё Рё СЃРѕР·РґР°РЅРёРµ РѕР±СЉРµРєС‚Р°, РµСЃР»Рё РІСЃРµ РѕРє
+    //Р’РѕР·РІСЂР°С‰Р°Р°РµС‚ РІ РїРёС‚РѕРЅ id
 
     if (PyTuple_GET_SIZE(o) == 5) {
 
         PyArrayObject* const pyPntsXY_ = (PyArrayObject*)PyTuple_GetItem(o, 0);
         PyArrayObject* const pyPntsPhi_ = (PyArrayObject*)PyTuple_GetItem(o, 1);
         PyArrayObject* const pyLinesXY_ = (PyArrayObject*)PyTuple_GetItem(o, 2);
+
 
         if (!PyLong_Check(PyTuple_GetItem(o, 3))) {
             cerr << "Bad N of points" << endl;
@@ -295,8 +609,9 @@ PyObject* init(PyObject*, PyObject* o) {
 
 static PyMethodDef lidarVector_methods[] = {
     { "init", (PyCFunction)init, METH_VARARGS, ""},
-    { "pushPnts", (PyCFunction)pyFun<&Device::pushPnts>, METH_O, ""},
+    //{ "pushPnts", (PyCFunction)pyFun<&Device::pushPnts>, METH_O, ""},
     { "calcLines", (PyCFunction)pyFun<&Device::calcLines>, METH_O, ""},
+    //{ "getNlines", (PyCFunction)pyFun<&Device::getNlines>, METH_O, "" },
     { "synchronize", (PyCFunction)pyFun<nullptr>, METH_O, ""},
     { nullptr, nullptr, 0, nullptr }
 };
