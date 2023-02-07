@@ -61,7 +61,7 @@ struct Device {
 
     Device (PyArrayObject* const pyPntsXY, PyArrayObject* const pyPntsPhi, PyArrayObject* const pyLinesXY, size_t Npnts, PyObject* pyParams, size_t id) : 
         pyPntsXY(pyPntsXY), pyPntsPhi(pyPntsPhi), pyLinesXY(pyLinesXY), Npnts(Npnts), id(id),
-        deep(5.0), continuity(0.6), half_dPhi(0.3), tolerance(0.1)
+        deep(5.0), continuity(0.6), half_dPhi(0.3 * 0.0174532925199432957692369), tolerance(0.1)
     {
 
         if (!setParams(pyParams)) {
@@ -162,7 +162,7 @@ struct Device {
         //par0 = PyFloat_AsDouble(PyTuple_GetItem(pyParams, 0));  //здесь столько параметров, колько нужно надо прописать
         deep = PyFloat_AsDouble(PyTuple_GetItem(pyParams, 0));
         continuity = PyFloat_AsDouble(PyTuple_GetItem(pyParams, 1));
-        half_dPhi = PyFloat_AsDouble(PyTuple_GetItem(pyParams, 2));
+        half_dPhi = PyFloat_AsDouble(PyTuple_GetItem(pyParams, 2)) * 0.0174532925199432957692369;
         tolerance = PyFloat_AsDouble(PyTuple_GetItem(pyParams, 3));
 
 
@@ -229,8 +229,7 @@ struct Device {
         //    *(pLines_1r + i) = exp(pntsXY[1][i] * pntsXY[1][i] * pntsPhi[i]);
         //}
 
-        this->half_dPhi *= 0.0174532925199432957692369; // ?????????????????????
-        //cout << half_dPhi << endl;
+        //this->half_dPhi = 0.3 * 0.0174532925199432957692369; // ?????????????????????
 
         size_t fr = 0;
         size_t to = 0;
@@ -247,7 +246,7 @@ struct Device {
 
         Nlines = 0;
 
-        size_t* edges; // для результата setWithLMS
+        long* edges; // для результата setWithLMS - смещения от краёв отрезка
         vector<double>* segPntsXY; // точки сформированного отрезка
 
         // ///////////////////////////////////////////
@@ -264,14 +263,13 @@ struct Device {
                     while ((to < Npnts) && ((pntsXY[0][to] == 0.0) && pntsXY[1][to] == 0.0))
                         to++;
                 }
-
+                
                 else
                 {
                     line->isGap = false;
                     line->setAsTangentWithOnePnt(new double[] { pntsXY[0][fr], pntsXY[1][fr] }); 
                     to = fr + 1;
-                    //double dd = sqrt(pow(pntsXY[0][to], 2) + pow(pntsXY[1][to], 2)) - sqrt(pow(pntsXY[0][fr], 2) + pow(pntsXY[1][fr], 2));
-                    //sqrt(pow(pntsXY[0][to] - pntsXY[0][fr], 2) + pow(pntsXY[1][to] - pntsXY[1][fr], 2))
+
                     if ((to < Npnts) && (pntsXY[0][to] != 0.0 || pntsXY[1][to] != 0.0) && (sqrt(pow(pntsXY[0][to] - pntsXY[0][fr], 2) + pow(pntsXY[1][to] - pntsXY[1][fr], 2)) <= continuity))
                     {
                         line->setWithTwoPnts(new double[] { pntsXY[0][fr], pntsXY[1][fr] }, new double[] { pntsXY[0][to], pntsXY[1][to] });
@@ -291,7 +289,6 @@ struct Device {
                     {
                         segPntsXY = new vector<double>[2];
                         for (int i = 0; i < 2; i++)
-                            //segPntsXY[i].reserve(to - fr);
                             segPntsXY[i] = vector<double> (to - fr);
 
                         for (size_t i = 0; i < to - fr; i++)
@@ -362,7 +359,7 @@ struct Device {
                 if (!prev_line->isGap)
                 {
                     prev_line->getIntersection(line, new double* [] { pLines_0r + Nlines, pLines_1r + Nlines });
-                    double interAngle = atan2(linesXY[1][Nlines], linesXY[0][Nlines]);
+                    double interAngle = atan2(pLines_1r[Nlines], pLines_0r[Nlines]);
                     if (((interAngle > pntsPhi[fr - 1]) || (interAngle < pntsPhi[fr])) && ((interAngle > pntsPhi[fr]) || (interAngle < pntsPhi[fr - 1])))
                     {
                         prev_line->getProjectionOfPntEx(new double[] { pntsXY[0][fr - 1], pntsXY[1][fr - 1] }, new double*[] { pLines_0r + Nlines, pLines_1r + Nlines }, half_dPhi, false);
@@ -540,7 +537,6 @@ PyObject* pyFun(PyObject*, PyObject* o) {
                 unique_lock lk(dev->mxProcess); //синхронизация, здесь он ждет завершения расчетов по флагу
                 dev->cvProcess.wait(lk, [dev] {return dev->process; });
                 lk.unlock();
-                /*if(F == *(dev->calcLines)) */
                 return PyLong_FromSize_t(dev->Nlines);
             }
 

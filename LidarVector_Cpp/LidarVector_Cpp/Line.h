@@ -7,7 +7,7 @@ public:
 	double* line; // парметры А и С
 	bool isGap;
 	bool isSingle;
-	double q0k; // порог ошибки
+	double qOk; // порог ошибки
 	double _q; // ошибка
 	double* _sums; // вычисляемые суммы
 
@@ -17,7 +17,7 @@ public:
 	Line* copy(); // возвращает копию объекта Line
 	void setAsTangentWithOnePnt(double* p); // задаёт A, C по одной точке
 	void setWithTwoPnts(double* p1, double* p2); // задаёт A, C по двум точкам
-	size_t* setWithLMS(std::vector<double>* pnts, bool best = true); // возвращает смещения среза от краёв ?
+	long* setWithLMS(std::vector<double>* pnts, bool best = true); // возвращает смещения среза от краёв ?
 	double getDistanceToPnt(double* p, bool sgnd=false); // возвращает расстояние от точки до прямой
 	void getProjectionOfPnt(double* p, double** pout); // ???
 	void getProjectionOfPntEx(double* p, double** pout, double half_dPhi, bool direction); // ???
