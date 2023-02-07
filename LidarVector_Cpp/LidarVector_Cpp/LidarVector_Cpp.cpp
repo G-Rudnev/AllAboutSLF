@@ -55,9 +55,9 @@ struct Device {
     PyArrayObject* pyLinesXY = nullptr;
     PyArrayObject* pyNlines = nullptr;
 
-    double** pntsXY = nullptr;  //соответствующие массивы плюсовой памяти
-    double* pntsPhi = nullptr;
-    double** linesXY = nullptr;
+    //double** pntsXY = nullptr;  //соответствующие массивы плюсовой памяти
+    //double* pntsPhi = nullptr;
+    //double** linesXY = nullptr;
 
 
     Device() = default;
@@ -73,15 +73,15 @@ struct Device {
 
         //setParams(pyParams);
 
-        pntsXY = new double* [2];
+        //pntsXY = new double* [2];
         //linesXY = new double* [2];
-        for (int i = 0; i < 2; i++) {
-            pntsXY[i] = new double[Npnts];
-            //linesXY[i] = new double[Npnts];
-        }
+        //for (int i = 0; i < 2; i++) {
+        //    pntsXY[i] = new double[Npnts];
+        //    //linesXY[i] = new double[Npnts]; ////////////////////////////////////////////////////////////////////
+        //}
 
 
-        pntsPhi = new double[Npnts];
+        //pntsPhi = new double[Npnts];
 
         thr = thread([this]     //запускаем поток
             {
@@ -212,29 +212,21 @@ struct Device {
 
         // Это я просто скопировал из pushPnts
         // Получение точек из Python сюда
-        double* pXY_0r = (double*)PyArray_DATA(pyPntsXY);   //0-й ряд
-        double* pXY_1r = pXY_0r + Npnts;                    //1-й ряд
+        double* pXY_x = (double*)PyArray_DATA(pyPntsXY);   //0-й ряд 
+        double* pXY_y = pXY_x + Npnts;                    //1-й ряд
         double* pPhi = (double*)PyArray_DATA(pyPntsPhi);
 
         size_t* pNlines = (size_t*)PyArray_DATA(pyNlines);
 
-        for (size_t i = 0; i < Npnts; i++) 
+        /*for (size_t i = 0; i < Npnts; i++)  //////////////////////////////////////////////////////////////////////////////////////
         {
-            pntsXY[0][i] = *(pXY_0r + i);
-            pntsXY[1][i] = *(pXY_1r + i);
+            pntsXY[0][i] = *(pXY_x + i);
+            pntsXY[1][i] = *(pXY_y + i);
             pntsPhi[i] = *(pPhi + i);
-        }
+        }*/
 
         double* pLines_0r = (double*)PyArray_DATA(pyLinesXY);
         double* pLines_1r = pLines_0r + Npnts;
-
-        //// ЗАМЕНИТЬ
-        //for (size_t i = 0; i < Nlines; i++) {
-        //    *(pLines_0r + i) = exp(pntsXY[0][i] * pntsXY[0][i] * pntsPhi[i]);
-        //    *(pLines_1r + i) = exp(pntsXY[1][i] * pntsXY[1][i] * pntsPhi[i]);
-        //}
-
-        //this->half_dPhi = 0.3 * 0.0174532925199432957692369; // ?????????????????????
 
         size_t fr = 0;
         size_t to = 0;
@@ -254,38 +246,36 @@ struct Device {
         long* edges; // для результата setWithLMS - смещения от краёв отрезка
         vector<double>* segPntsXY; // точки сформированного отрезка
 
-        // ///////////////////////////////////////////
-
         while (fr < Npnts) 
         {
             // формирование сегмента
             if (!extra)
             {
-                if ((pntsXY[0][fr] == 0.0) && (pntsXY[1][fr] == 0.0))
+                if ((pXY_x[fr] == 0.0) && (pXY_y[fr] == 0.0))
                 {
                     line->isGap = true;
                     to = fr + 1;
-                    while ((to < Npnts) && ((pntsXY[0][to] == 0.0) && pntsXY[1][to] == 0.0))
+                    while ((to < Npnts) && ((pXY_x[to] == 0.0) && pXY_y[to] == 0.0))
                         to++;
                 }
                 
                 else
                 {
                     line->isGap = false;
-                    line->setAsTangentWithOnePnt(new double[] { pntsXY[0][fr], pntsXY[1][fr] }); 
+                    line->setAsTangentWithOnePnt(new double[] { pXY_x[fr], pXY_y[fr] });
                     to = fr + 1;
 
-                    if ((to < Npnts) && (pntsXY[0][to] != 0.0 || pntsXY[1][to] != 0.0) && (sqrt(pow(pntsXY[0][to] - pntsXY[0][fr], 2) + pow(pntsXY[1][to] - pntsXY[1][fr], 2)) <= continuity))
+                    if ((to < Npnts) && (pXY_x[to] != 0.0 || pXY_y[to] != 0.0) && (sqrt(pow(pXY_x[to] - pXY_x[fr], 2) + pow(pXY_y[to] - pXY_y[fr], 2)) <= continuity))
                     {
-                        line->setWithTwoPnts(new double[] { pntsXY[0][fr], pntsXY[1][fr] }, new double[] { pntsXY[0][to], pntsXY[1][to] });
+                        line->setWithTwoPnts(new double[] { pXY_x[fr], pXY_y[fr] }, new double[] { pXY_x[to], pXY_y[to] });
                         to++;
-                        while ((to < Npnts) && (pntsXY[0][to] != 0.0 || pntsXY[1][to] != 0) && (line->getDistanceToPnt(new double[] { pntsXY[0][to], pntsXY[1][to] }) <= tolerance))
+                        while ((to < Npnts) && (pXY_x[to] != 0.0 || pXY_y[to] != 0) && (line->getDistanceToPnt(new double[] { pXY_x[to], pXY_y[to] }) <= tolerance))
                         {
                             to++;
                             if ((to - fr) % 2 == 0)
                             {
                                 size_t mid_to = fr + (size_t)(floor((to - fr) / 2.0));
-                                line->setWithTwoPnts(new double[] { pntsXY[0][fr], pntsXY[1][fr] }, new double[] { pntsXY[0][mid_to], pntsXY[1][mid_to] });
+                                line->setWithTwoPnts(new double[] { pXY_x[fr], pXY_y[fr] }, new double[] { pXY_x[mid_to], pXY_y[mid_to] });
                             }
                         }
                     }
@@ -298,8 +288,8 @@ struct Device {
 
                         for (size_t i = 0; i < to - fr; i++)
                         {
-                            segPntsXY[0][i] = pntsXY[0][fr + i];
-                            segPntsXY[1][i] = pntsXY[1][fr + i];
+                            segPntsXY[0][i] = pXY_x[fr + i];
+                            segPntsXY[1][i] = pXY_y[fr + i];
                         }
 
                         edges = line->setWithLMS(segPntsXY);
@@ -312,7 +302,7 @@ struct Device {
                             extra = true;
                             if (edges[0] == 1)
                             {
-                                line->line[0] = pntsXY[1][fr] / pntsXY[0][fr];
+                                line->line[0] = pXY_y[fr] / pXY_x[fr];
                                 line->line[1] = 0.0;
                                 fr--;
                                 to = fr + 1;
@@ -320,7 +310,7 @@ struct Device {
 
                             else if (edges[0] == 2)
                             {
-                                line->setWithTwoPnts(new double[] { pntsXY[0][fr], pntsXY[1][fr] }, new double[] { pntsXY[0][fr + 1], pntsXY[1][fr + 1] });
+                                line->setWithTwoPnts(new double[] { pXY_x[fr], pXY_y[fr] }, new double[] { pXY_x[fr + 1], pXY_y[fr + 1] });
                                 to = fr + 1;
                             }
 
@@ -328,13 +318,12 @@ struct Device {
                             {
                                 segPntsXY = new vector<double>[2];
                                 for (int i = 0; i < 2; i++)
-                                    //segPntsXY[i].reserve(edges[0]);
                                     segPntsXY[i] = vector<double> (edges[0]);
 
                                 for (size_t i = 0; i < edges[0]; i++)
                                 {
-                                    segPntsXY[0][i] = pntsXY[0][fr + i];
-                                    segPntsXY[1][i] = pntsXY[1][fr + i];
+                                    segPntsXY[0][i] = pXY_x[fr + i];
+                                    segPntsXY[1][i] = pXY_y[fr + i];
                                 }
 
                                 edges = line->setWithLMS(segPntsXY, false);
@@ -363,11 +352,11 @@ struct Device {
                 {
                     prev_line->getIntersection(line, new double* [] { pLines_0r + (*pNlines), pLines_1r + (*pNlines) });
                     double interAngle = atan2(pLines_1r[(*pNlines)], pLines_0r[(*pNlines)]);
-                    if (((interAngle > pntsPhi[fr - 1]) || (interAngle < pntsPhi[fr])) && ((interAngle > pntsPhi[fr]) || (interAngle < pntsPhi[fr - 1])))
+                    if (((interAngle > pPhi[fr - 1]) || (interAngle < pPhi[fr])) && ((interAngle > pPhi[fr]) || (interAngle < pPhi[fr - 1])))
                     {
-                        prev_line->getProjectionOfPntEx(new double[] { pntsXY[0][fr - 1], pntsXY[1][fr - 1] }, new double*[] { pLines_0r + (*pNlines), pLines_1r + (*pNlines) }, half_dPhi, false);
+                        prev_line->getProjectionOfPntEx(new double[] { pXY_x[fr - 1], pXY_y[fr - 1] }, new double*[] { pLines_0r + (*pNlines), pLines_1r + (*pNlines) }, half_dPhi, false);
                         (*pNlines) += 1;
-                        if (sqrt(pow(pntsXY[0][fr] - pntsXY[0][fr - 1], 2) + pow(pntsXY[1][fr] - pntsXY[1][fr - 1], 2)) > continuity)
+                        if (sqrt(pow(pXY_x[fr] - pXY_x[fr - 1], 2) + pow(pXY_y[fr] - pXY_y[fr - 1], 2)) > continuity)
                         {
                             *(pLines_0r + (*pNlines)) = 0.001;
                             *(pLines_1r + (*pNlines)) = 0.001;
@@ -383,26 +372,26 @@ struct Device {
 
                 if (prev_line->isGap)
                 {
-                    line->getProjectionOfPntEx(new double[] { pntsXY[0][fr], pntsXY[1][fr] }, new double* [] { pLines_0r + (*pNlines), pLines_1r + (*pNlines) }, half_dPhi, true);
+                    line->getProjectionOfPntEx(new double[] { pXY_x[fr], pXY_y[fr] }, new double* [] { pLines_0r + (*pNlines), pLines_1r + (*pNlines) }, half_dPhi, true);
                     (*pNlines) += 1;
                 }
 
                 if (to >= Npnts)
                 {
-                    line->getProjectionOfPntEx(new double[] { pntsXY[0][to - 1], pntsXY[1][to - 1] }, new double* [] { pLines_0r + (*pNlines), pLines_1r + (*pNlines) }, half_dPhi, false);
+                    line->getProjectionOfPntEx(new double[] { pXY_x[to - 1], pXY_y[to - 1] }, new double* [] { pLines_0r + (*pNlines), pLines_1r + (*pNlines) }, half_dPhi, false);
                     (*pNlines) += 1;
                 }
             }
 
-            else
+            else // сюда на моих данных не заходит - пока не получилось протестировать, возможно, имеет ошибки
             {
                 if (fr == 0)
                 {
                     if (to < Npnts)
                     {
-                        ex_line->line[0] = tan(pntsPhi[0]);
+                        ex_line->line[0] = tan(pPhi[0]);
                         ex_line->line[1] = 0.0;
-                        ex_line->getProjectionOfPnt(new double[] { pntsXY[0][to], pntsXY[1][to] }, new double* [] { pLines_0r, pLines_1r});
+                        ex_line->getProjectionOfPnt(new double[] { pXY_x[to], pXY_y[to] }, new double* [] { pLines_0r, pLines_1r});
                         *(pLines_0r + 1) = 0.0;
                         *(pLines_1r + 1) = 0.0;
                         (*pNlines) = 2;
@@ -410,19 +399,19 @@ struct Device {
 
                     else
                     {
-                        *pLines_0r = deep * cos(pntsPhi[0]);
-                        *pLines_1r = deep * sin(pntsPhi[0]);
+                        *pLines_0r = deep * cos(pPhi[0]);
+                        *pLines_1r = deep * sin(pPhi[0]);
                         *(pLines_0r + 1) = 0.0;
                         *(pLines_1r + 1) = 0.0;
-                        *(pLines_0r + 2) = deep * cos(pntsPhi[Npnts - 1]);
-                        *(pLines_1r + 2) = deep * sin(pntsPhi[Npnts - 1]);
+                        *(pLines_0r + 2) = deep * cos(pPhi[Npnts - 1]);
+                        *(pLines_1r + 2) = deep * sin(pPhi[Npnts - 1]);
                         (*pNlines) = 3;
                     }
                 }
 
                 else
                 {
-                    prev_line->getProjectionOfPntEx(new double[] { pntsXY[0][fr - 1], pntsXY[1][fr - 1] }, new double* [] { pLines_0r + (*pNlines), pLines_1r + (*pNlines) }, half_dPhi, false);
+                    prev_line->getProjectionOfPntEx(new double[] { pXY_x[fr - 1], pXY_y[fr - 1] }, new double* [] { pLines_0r + (*pNlines), pLines_1r + (*pNlines) }, half_dPhi, false);
                     (*pNlines)++;
 
                     if (to >= Npnts)
@@ -431,26 +420,26 @@ struct Device {
                         *(pLines_1r + (*pNlines)) = 0.0;
                         (*pNlines) += 1;
 
-                        ex_line->line[0] = tan(pntsPhi[Npnts - 1]);
+                        ex_line->line[0] = tan(pPhi[Npnts - 1]);
                         ex_line->line[1] = 0.0;
-                        ex_line->getProjectionOfPnt(new double[] { pntsXY[0][fr - 1], pntsXY[1][fr - 1] }, new double* [] { pLines_0r + (*pNlines), pLines_1r + (*pNlines)});
+                        ex_line->getProjectionOfPnt(new double[] { pXY_x[fr - 1], pXY_y[fr - 1] }, new double* [] { pLines_0r + (*pNlines), pLines_1r + (*pNlines)});
                         (*pNlines) += 1;
                     }
 
-                    else if (sqrt(pow(pntsXY[0][to] - pntsXY[0][fr - 1], 2) + pow(pntsXY[1][to] - pntsXY[1][fr - 1], 2)) > continuity)
+                    else if (sqrt(pow(pXY_x[to] - pXY_x[fr - 1], 2) + pow(pXY_y[to] - pXY_y[fr - 1], 2)) > continuity)
                     {
-                        ex_line->line[0] = tan(pntsPhi[fr - 1]);
+                        ex_line->line[0] = tan(pPhi[fr - 1]);
                         ex_line->line[1] = 0.0;
-                        ex_line->getProjectionOfPnt(new double[] { pntsXY[0][to], pntsXY[1][to] }, new double* [] { ex_pnt[0], ex_pnt[1]});
+                        ex_line->getProjectionOfPnt(new double[] { pXY_x[to], pXY_y[to] }, new double* [] { ex_pnt[0], ex_pnt[1]});
                         
-                        if ((sqrt(pow(*ex_pnt[0], 2) + pow(*ex_pnt[1], 2)) > sqrt(pow(pntsXY[0][fr - 1], 2) + pow(pntsXY[1][fr - 1], 2))) && (*ex_pnt[0] * pntsXY[0][fr - 1] > 0.0 or *ex_pnt[1] * pntsXY[1][fr - 1] > 0.0))
+                        if ((sqrt(pow(*(ex_pnt[0]), 2) + pow(*(ex_pnt[1]), 2)) > sqrt(pow(pXY_x[fr - 1], 2) + pow(pXY_y[fr - 1], 2))) && (*(ex_pnt[0]) * pXY_x[fr - 1] > 0.0 or *(ex_pnt[1]) * pXY_y[fr - 1] > 0.0))
                         {
                             *(pLines_0r + (*pNlines)) = 0.001;
                             *(pLines_1r + (*pNlines)) = 0.001;
                             (*pNlines) += 1;
 
-                            *(pLines_0r + (*pNlines)) = *ex_pnt[0];
-                            *(pLines_1r + (*pNlines)) = *ex_pnt[1];
+                            *(pLines_0r + (*pNlines)) = *(ex_pnt[0]);
+                            *(pLines_1r + (*pNlines)) = *(ex_pnt[1]);
                             (*pNlines) += 1;
 
                             *(pLines_0r + (*pNlines)) = 0.0;
@@ -460,18 +449,18 @@ struct Device {
 
                         else
                         {
-                            ex_line->line[0] = tan(pntsPhi[to]);
+                            ex_line->line[0] = tan(pPhi[to]);
                             ex_line->line[1] = 0.0;
-                            ex_line->getProjectionOfPnt(new double[] { pntsXY[0][fr - 1], pntsXY[1][fr - 1] }, new double* [] { ex_pnt[0], ex_pnt[1]});
+                            ex_line->getProjectionOfPnt(new double[] { pXY_x[fr - 1], pXY_y[fr - 1] }, new double* [] { ex_pnt[0], ex_pnt[1]});
 
-                            if ((sqrt(pow(*ex_pnt[0], 2) + pow(*ex_pnt[1], 2)) > sqrt(pow(pntsXY[0][to], 2) + pow(pntsXY[1][to], 2))) && (*ex_pnt[0] * pntsXY[0][to] > 0.0 or *ex_pnt[1] * pntsXY[1][to] > 0.0))
+                            if ((sqrt(pow(*(ex_pnt[0]), 2) + pow(*(ex_pnt[1]), 2)) > sqrt(pow(pXY_x[to], 2) + pow(pXY_y[to], 2))) && (*(ex_pnt[0]) * pXY_x[to] > 0.0 or *(ex_pnt[1]) * pXY_y[to] > 0.0))
                             {
                                 *(pLines_0r + (*pNlines)) = 0.0;
                                 *(pLines_1r + (*pNlines)) = 0.0;
                                 (*pNlines) += 1;
 
-                                *(pLines_0r + (*pNlines)) = *ex_pnt[0];
-                                *(pLines_1r + (*pNlines)) = *ex_pnt[1];
+                                *(pLines_0r + (*pNlines)) = *(ex_pnt[0]);
+                                *(pLines_1r + (*pNlines)) = *(ex_pnt[1]);
                                 (*pNlines) += 1;
 
                                 *(pLines_0r + (*pNlines)) = 0.001;
@@ -493,7 +482,6 @@ struct Device {
             prev_line = line->copy();
             fr = to;
         }
-        cout << (*pNlines) << endl;
 
         //с ежекратным запросом (медленнее)
         //for (size_t i = 0; i < Nlines; i++) {
