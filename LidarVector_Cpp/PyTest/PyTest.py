@@ -31,7 +31,8 @@ pntsXY = [] #теперь можно импортировать, память в
 pntsPhi = []
 pntsBuf = []
 
-Nlines = 0
+#Nlines = 0
+Nlines = []
 linesXY = []
 
 deep = 5.0
@@ -595,46 +596,28 @@ def drawLoad(xlim=(-4.5, 4.5), ylim=(-0.5, 3.5)):
 
 
 def nextPnts(event):
-    global Nlines, pntsBuf
-    
-    Nlines = 0
+    global Nlines, lines_num, pntsBuf
     
     with mutex:
         # firstPnt(pntsXY, pntsPhi)
         # createPnts(pntsXY, pntsPhi, pntsBuf, N, shape = shape, mess = mess)
 
         pntsBuf = create_lidar_pnts(pntsXY, pntsPhi, pntsBuf, N)
-        #Nlines = getLines(linesXY, pntsXY, pntsPhi, N, deep, cont, half_dphi, tol)
-        #t0 = time.time()
-        ##print("calc", lidarVector.calcLines(curr_id))
-        ##print("synch", lidarVector.synchronize(curr_id))
-        #print("Python Nlines PREV", Nlines)
-        #lidarVector.calcLines(curr_id)
-        #Nlines = lidarVector.synchronize(curr_id)
-        #print("Python Nlines NEW", Nlines)
-        ##Nlines = lidarVector.calcLines(curr_id)
-        ##lidarVector.synchronize(curr_id)
-        ##Nlines = linesXY[0][-1]
-        #print("Time", time.time() - t0)
-        ##print("PYTHON Nlines", Nlines)
-        ##print("PYTHON linesXY")
-        ##print(linesXY)
-        Nlines = getNlines(curr_id)
-        print("Nlines CPP", Nlines)
+        lines_num = getNlines(curr_id)
+        print("Nlines CPP", lines_num)
 
         drawLoad()
-        Nlines = getLines(linesXY, pntsXY, pntsPhi, N, deep, cont, half_dphi, tol)
-        print("Nlines PYTHON", Nlines)
+        lines_num = getLines(linesXY, pntsXY, pntsPhi, N, deep, cont, half_dphi, tol)
+        print("Nlines PYTHON", lines_num)
 
 
 def getNlines(device_id):
+    global Nlines
     t0 = time.time()
-    #print("Python Nlines PREV", Nlines)
     lidarVector.calcLines(device_id)
-    lns_num = lidarVector.synchronize(device_id)
-    #lns_num = lidarVector.getNlines(device_id)
-    #print(linesXY)
+    lidarVector.synchronize(device_id)
     print("CPP time", time.time() - t0)
+    lns_num = Nlines[0]
 
     return lns_num
 
@@ -642,7 +625,7 @@ def getNlines(device_id):
 def main():
 
     global Nlines, ax, fig
-    global pntsXY, pntsPhi, pntsBuf, linesXY
+    global pntsXY, pntsPhi, pntsBuf, linesXY, listNlines
     global curr_id
 
     pntsXY = np.zeros([3, N])
@@ -651,6 +634,9 @@ def main():
 
     linesXY = np.zeros([3, N])
     linesXY[2, :] = 1.0
+
+    Nlines = np.zeros([1], dtype=int)
+
 
     fig = plt.figure()
     ax = plt.axes([0.07, 0.25, 0.45, 0.7])
@@ -663,36 +649,17 @@ def main():
     half_dPhi = 0.3;
     tolerance = 0.1;
 
-    id0 = lidarVector.init(pntsXY, pntsPhi, linesXY, N, (deep, continuity, half_dPhi, tolerance))
+    id0 = lidarVector.init(pntsXY, pntsPhi, linesXY, Nlines, N, (deep, continuity, half_dPhi, tolerance))
     curr_id = id0
 
-    Nlines = getNlines(curr_id)
-    print("Nlines CPP", Nlines)
+    lines_num = getNlines(curr_id)
+    print("Nlines CPP", lines_num)
     drawLoad()
 
     fig.show()
 
-    Nlines = getLines(linesXY, pntsXY, pntsPhi, N, deep, cont, half_dphi, tol)
-    print("Nlines PYTHON", Nlines)
-
-    
-
-    #lidarVector.pushPnts(id0)
-    #t0 = time.time()
-    ##print("calc", lidarVector.calcLines(curr_id))
-    ##print("synch", lidarVector.synchronize(curr_id))
-    #print("Python Nlines PREV", Nlines)
-    #lidarVector.calcLines(curr_id)
-    #a = input()
-    #lidarVector.synchronize(curr_id)
-    #a = input()
-    #Nlines = lidarVector.getNlines(curr_id)
-    ##lidarVector.synchronize()
-    #print("Python Nlines NEW", Nlines)
-    #print("Time", time.time() - t0)
-    #print("PYTHON Nlines", Nlines)
-    #print("PYTHON linesXY")
-    #print(linesXY)
+    lines_num = getLines(linesXY, pntsXY, pntsPhi, N, deep, cont, half_dphi, tol)
+    print("Nlines PYTHON", lines_num)
 
     # =============== Конец блока =================
 
