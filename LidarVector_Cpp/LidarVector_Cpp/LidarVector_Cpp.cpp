@@ -39,18 +39,21 @@ struct Device {
     queue<void (Device::*) ()> foosQueue;   //очередь функций объекта
 
     size_t Npnts = 0;  //in variable
-    size_t Nlines = 0; //out variable
+
+    //size_t* Nlines = 0; //out variable
 
     //double par0 = 0.0;  //параметры
     double deep = 0.0;
     double continuity = 0.0;
     double half_dPhi = 0.0;
     double tolerance = 0.0;
+
 //  ...
 
     PyArrayObject* pyPntsXY = nullptr;  //указатели на нужные объекты питона
     PyArrayObject* pyPntsPhi = nullptr;
     PyArrayObject* pyLinesXY = nullptr;
+    PyArrayObject* pyNlines = nullptr;
 
     double** pntsXY = nullptr;  //соответствующие массивы плюсовой памяти
     double* pntsPhi = nullptr;
@@ -59,8 +62,8 @@ struct Device {
 
     Device() = default;
 
-    Device (PyArrayObject* const pyPntsXY, PyArrayObject* const pyPntsPhi, PyArrayObject* const pyLinesXY, size_t Npnts, PyObject* pyParams, size_t id) : 
-        pyPntsXY(pyPntsXY), pyPntsPhi(pyPntsPhi), pyLinesXY(pyLinesXY), Npnts(Npnts), id(id),
+    Device (PyArrayObject* const pyPntsXY, PyArrayObject* const pyPntsPhi, PyArrayObject* const pyLinesXY, PyArrayObject* const pyNlines, size_t Npnts, PyObject* pyParams, size_t id) : 
+        pyPntsXY(pyPntsXY), pyPntsPhi(pyPntsPhi), pyLinesXY(pyLinesXY), pyNlines(pyNlines), Npnts(Npnts), id(id),
         deep(5.0), continuity(0.6), half_dPhi(0.3 * 0.0174532925199432957692369), tolerance(0.1)
     {
 
@@ -71,10 +74,10 @@ struct Device {
         //setParams(pyParams);
 
         pntsXY = new double* [2];
-        linesXY = new double* [2];
+        //linesXY = new double* [2];
         for (int i = 0; i < 2; i++) {
             pntsXY[i] = new double[Npnts];
-            linesXY[i] = new double[Npnts];
+            //linesXY[i] = new double[Npnts];
         }
 
 
@@ -155,7 +158,7 @@ struct Device {
         }
 
         if (PyTuple_GET_SIZE(pyParams) != 4) {  //кол-во параметров, не забываем менять
-            cerr << "There should be 4 parameters in a tuple" << endl;
+            cerr << "There should be 4 parameters in a tuple" << endl; // 5-й - ссылка на единичный список Nlines
             return false;
         }
 
@@ -213,6 +216,8 @@ struct Device {
         double* pXY_1r = pXY_0r + Npnts;                    //1-й ряд
         double* pPhi = (double*)PyArray_DATA(pyPntsPhi);
 
+        size_t* pNlines = (size_t*)PyArray_DATA(pyNlines);
+
         for (size_t i = 0; i < Npnts; i++) 
         {
             pntsXY[0][i] = *(pXY_0r + i);
@@ -244,7 +249,7 @@ struct Device {
 
         double** ex_pnt = new double* [2]; //{0.0, 0.0};
 
-        Nlines = 0;
+        *(pNlines) = 0;
 
         long* edges; // для результата setWithLMS - смещения от краёв отрезка
         vector<double>* segPntsXY; // точки сформированного отрезка
@@ -351,43 +356,41 @@ struct Device {
                 extra = false;
             }
 
-            //cout << "CPP " << fr << " " << to << endl;
-
             // интеграция сегмента
             if (!line->isGap)
             {
                 if (!prev_line->isGap)
                 {
-                    prev_line->getIntersection(line, new double* [] { pLines_0r + Nlines, pLines_1r + Nlines });
-                    double interAngle = atan2(pLines_1r[Nlines], pLines_0r[Nlines]);
+                    prev_line->getIntersection(line, new double* [] { pLines_0r + (*pNlines), pLines_1r + (*pNlines) });
+                    double interAngle = atan2(pLines_1r[(*pNlines)], pLines_0r[(*pNlines)]);
                     if (((interAngle > pntsPhi[fr - 1]) || (interAngle < pntsPhi[fr])) && ((interAngle > pntsPhi[fr]) || (interAngle < pntsPhi[fr - 1])))
                     {
-                        prev_line->getProjectionOfPntEx(new double[] { pntsXY[0][fr - 1], pntsXY[1][fr - 1] }, new double*[] { pLines_0r + Nlines, pLines_1r + Nlines }, half_dPhi, false);
-                        Nlines++;
+                        prev_line->getProjectionOfPntEx(new double[] { pntsXY[0][fr - 1], pntsXY[1][fr - 1] }, new double*[] { pLines_0r + (*pNlines), pLines_1r + (*pNlines) }, half_dPhi, false);
+                        (*pNlines) += 1;
                         if (sqrt(pow(pntsXY[0][fr] - pntsXY[0][fr - 1], 2) + pow(pntsXY[1][fr] - pntsXY[1][fr - 1], 2)) > continuity)
                         {
-                            *(pLines_0r + Nlines) = 0.001;
-                            *(pLines_1r + Nlines) = 0.001;
-                            Nlines++;
+                            *(pLines_0r + (*pNlines)) = 0.001;
+                            *(pLines_1r + (*pNlines)) = 0.001;
+                            (*pNlines) += 1;
                         }
 
                         prev_line->isGap = true;
                     }
 
                     else
-                        Nlines++;
+                        (*pNlines) += 1;
                 }
 
                 if (prev_line->isGap)
                 {
-                    line->getProjectionOfPntEx(new double[] { pntsXY[0][fr], pntsXY[1][fr] }, new double* [] { pLines_0r + Nlines, pLines_1r + Nlines }, half_dPhi, true);
-                    Nlines++;
+                    line->getProjectionOfPntEx(new double[] { pntsXY[0][fr], pntsXY[1][fr] }, new double* [] { pLines_0r + (*pNlines), pLines_1r + (*pNlines) }, half_dPhi, true);
+                    (*pNlines) += 1;
                 }
 
                 if (to >= Npnts)
                 {
-                    line->getProjectionOfPntEx(new double[] { pntsXY[0][to - 1], pntsXY[1][to - 1] }, new double* [] { pLines_0r + Nlines, pLines_1r + Nlines }, half_dPhi, false);
-                    Nlines++;
+                    line->getProjectionOfPntEx(new double[] { pntsXY[0][to - 1], pntsXY[1][to - 1] }, new double* [] { pLines_0r + (*pNlines), pLines_1r + (*pNlines) }, half_dPhi, false);
+                    (*pNlines) += 1;
                 }
             }
 
@@ -402,7 +405,7 @@ struct Device {
                         ex_line->getProjectionOfPnt(new double[] { pntsXY[0][to], pntsXY[1][to] }, new double* [] { pLines_0r, pLines_1r});
                         *(pLines_0r + 1) = 0.0;
                         *(pLines_1r + 1) = 0.0;
-                        Nlines = 2;
+                        (*pNlines) = 2;
                     }
 
                     else
@@ -413,28 +416,27 @@ struct Device {
                         *(pLines_1r + 1) = 0.0;
                         *(pLines_0r + 2) = deep * cos(pntsPhi[Npnts - 1]);
                         *(pLines_1r + 2) = deep * sin(pntsPhi[Npnts - 1]);
-                        Nlines = 3;
+                        (*pNlines) = 3;
                     }
                 }
 
                 else
                 {
-                    prev_line->getProjectionOfPntEx(new double[] { pntsXY[0][fr - 1], pntsXY[1][fr - 1] }, new double* [] { pLines_0r + Nlines, pLines_1r + Nlines }, half_dPhi, false);
-                    Nlines++;
+                    prev_line->getProjectionOfPntEx(new double[] { pntsXY[0][fr - 1], pntsXY[1][fr - 1] }, new double* [] { pLines_0r + (*pNlines), pLines_1r + (*pNlines) }, half_dPhi, false);
+                    (*pNlines)++;
 
                     if (to >= Npnts)
                     {
-                        *(pLines_0r + Nlines) = 0.0;
-                        *(pLines_1r + Nlines) = 0.0;
-                        Nlines++;
+                        *(pLines_0r + (*pNlines)) = 0.0;
+                        *(pLines_1r + (*pNlines)) = 0.0;
+                        (*pNlines) += 1;
 
                         ex_line->line[0] = tan(pntsPhi[Npnts - 1]);
                         ex_line->line[1] = 0.0;
-                        ex_line->getProjectionOfPnt(new double[] { pntsXY[0][fr - 1], pntsXY[1][fr - 1] }, new double* [] { pLines_0r + Nlines, pLines_1r + Nlines});
-                        Nlines++;
+                        ex_line->getProjectionOfPnt(new double[] { pntsXY[0][fr - 1], pntsXY[1][fr - 1] }, new double* [] { pLines_0r + (*pNlines), pLines_1r + (*pNlines)});
+                        (*pNlines) += 1;
                     }
 
-                    //dd = sqrt(pow(pntsXY[0][to], 2) + pow(pntsXY[1][to], 2)) - sqrt(pow(pntsXY[0][fr], 2) + pow(pntsXY[1][fr], 2));
                     else if (sqrt(pow(pntsXY[0][to] - pntsXY[0][fr - 1], 2) + pow(pntsXY[1][to] - pntsXY[1][fr - 1], 2)) > continuity)
                     {
                         ex_line->line[0] = tan(pntsPhi[fr - 1]);
@@ -443,17 +445,17 @@ struct Device {
                         
                         if ((sqrt(pow(*ex_pnt[0], 2) + pow(*ex_pnt[1], 2)) > sqrt(pow(pntsXY[0][fr - 1], 2) + pow(pntsXY[1][fr - 1], 2))) && (*ex_pnt[0] * pntsXY[0][fr - 1] > 0.0 or *ex_pnt[1] * pntsXY[1][fr - 1] > 0.0))
                         {
-                            *(pLines_0r + Nlines) = 0.001;
-                            *(pLines_1r + Nlines) = 0.001;
-                            Nlines++;
+                            *(pLines_0r + (*pNlines)) = 0.001;
+                            *(pLines_1r + (*pNlines)) = 0.001;
+                            (*pNlines) += 1;
 
-                            *(pLines_0r + Nlines) = *ex_pnt[0];
-                            *(pLines_1r + Nlines) = *ex_pnt[1];
-                            Nlines++;
+                            *(pLines_0r + (*pNlines)) = *ex_pnt[0];
+                            *(pLines_1r + (*pNlines)) = *ex_pnt[1];
+                            (*pNlines) += 1;
 
-                            *(pLines_0r + Nlines) = 0.0;
-                            *(pLines_1r + Nlines) = 0.0;
-                            Nlines++;
+                            *(pLines_0r + (*pNlines)) = 0.0;
+                            *(pLines_1r + (*pNlines)) = 0.0;
+                            (*pNlines) += 1;
                         }
 
                         else
@@ -464,50 +466,42 @@ struct Device {
 
                             if ((sqrt(pow(*ex_pnt[0], 2) + pow(*ex_pnt[1], 2)) > sqrt(pow(pntsXY[0][to], 2) + pow(pntsXY[1][to], 2))) && (*ex_pnt[0] * pntsXY[0][to] > 0.0 or *ex_pnt[1] * pntsXY[1][to] > 0.0))
                             {
-                                *(pLines_0r + Nlines) = 0.0;
-                                *(pLines_1r + Nlines) = 0.0;
-                                Nlines++;
+                                *(pLines_0r + (*pNlines)) = 0.0;
+                                *(pLines_1r + (*pNlines)) = 0.0;
+                                (*pNlines) += 1;
 
-                                *(pLines_0r + Nlines) = *ex_pnt[0];
-                                *(pLines_1r + Nlines) = *ex_pnt[1];
-                                Nlines++;
+                                *(pLines_0r + (*pNlines)) = *ex_pnt[0];
+                                *(pLines_1r + (*pNlines)) = *ex_pnt[1];
+                                (*pNlines) += 1;
 
-                                *(pLines_0r + Nlines) = 0.001;
-                                *(pLines_1r + Nlines) = 0.001;
-                                Nlines++;
+                                *(pLines_0r + (*pNlines)) = 0.001;
+                                *(pLines_1r + (*pNlines)) = 0.001;
+                                (*pNlines) += 1;
                             }
 
                             else
                             {
-                                *(pLines_0r + Nlines) = 0.0;
-                                *(pLines_1r + Nlines) = 0.0;
-                                Nlines++;
+                                *(pLines_0r + (*pNlines)) = 0.0;
+                                *(pLines_1r + (*pNlines)) = 0.0;
+                                (*pNlines) += 1;
                             }
                         }
                     }
                 }
             }
-            //cout << "Nlines = " << Nlines << endl;
+
             prev_line = line->copy();
             fr = to;
-            //cout << "Fr = " << fr << endl;
-
         }
-
+        cout << (*pNlines) << endl;
 
         //с ежекратным запросом (медленнее)
         //for (size_t i = 0; i < Nlines; i++) {
         //    *(double*)PyArray_GETPTR2(pyLinesXY, 0, i) = pntsXY[0][i] * pntsXY[0][i] * pntsPhi[i];
         //    *(double*)PyArray_GETPTR2(pyLinesXY, 1, i) = pntsXY[1][i] * pntsXY[1][i] * pntsPhi[i];
         //}
-
-        //lil->lol(); // пробная меточка
-        //return PyLong_FromSize_t(0);
     }
 
-    //void getNlines() {
-    //    //return PyLong_FromSize_t(this->Nlines);
-    //}
 };
 
 
@@ -524,9 +518,6 @@ PyObject* pyFun(PyObject*, PyObject* o) {
             Device* dev = devices[id].get();
 
             if (F != nullptr) {
-                /*if (F == &(Device::getNlines)) {
-                    return PyLong_FromSize_t(dev->Nlines);
-                }*/
                 unique_lock lk(dev->mxCall);
                 dev->process = false;   //блочим флаг завершенных расчетов
                 dev->foosQueue.push(F);     //добавляем функцию в очередь
@@ -537,7 +528,6 @@ PyObject* pyFun(PyObject*, PyObject* o) {
                 unique_lock lk(dev->mxProcess); //синхронизация, здесь он ждет завершения расчетов по флагу
                 dev->cvProcess.wait(lk, [dev] {return dev->process; });
                 lk.unlock();
-                return PyLong_FromSize_t(dev->Nlines);
             }
 
             return PyLong_FromLong(0);
@@ -557,24 +547,26 @@ PyObject* init(PyObject*, PyObject* o) {
     //Здесь - проверки, проверки и создание объекта, если все ок
     //Возвращаает в питон id
 
-    if (PyTuple_GET_SIZE(o) == 5) {
+    if (PyTuple_GET_SIZE(o) == 6) {
 
         PyArrayObject* const pyPntsXY_ = (PyArrayObject*)PyTuple_GetItem(o, 0);
         PyArrayObject* const pyPntsPhi_ = (PyArrayObject*)PyTuple_GetItem(o, 1);
         PyArrayObject* const pyLinesXY_ = (PyArrayObject*)PyTuple_GetItem(o, 2);
+        PyArrayObject* const pyNlines_ = (PyArrayObject*)PyTuple_GetItem(o, 3);
 
 
-        if (!PyLong_Check(PyTuple_GetItem(o, 3))) {
+        if (!PyLong_Check(PyTuple_GetItem(o, 4))) {
             cerr << "Bad N of points" << endl;
             return PyLong_FromLong(-1);
         }
 
-        size_t N = PyLong_AsLongLong(PyTuple_GetItem(o, 3));
-        PyObject* pyParams = PyTuple_GetItem(o, 4);
+        size_t N = PyLong_AsLongLong(PyTuple_GetItem(o, 4));
+        PyObject* pyParams = PyTuple_GetItem(o, 5);
 
         if (PyArray_NDIM(pyPntsXY_) != 2 &&
             PyArray_NDIM(pyPntsPhi_) != 1 &&
-            PyArray_NDIM(pyLinesXY_) != 2) {
+            PyArray_NDIM(pyLinesXY_) != 2) //&& PyArray_NDIM(pyNlines_) != 1) 
+        {
             cerr << "Wrong data dimensions" << endl;
             return PyLong_FromLong(-1);
         }
@@ -591,7 +583,7 @@ PyObject* init(PyObject*, PyObject* o) {
         }
 
         try {
-            devices.push_back(unique_ptr<Device>(new Device(pyPntsXY_, pyPntsPhi_, pyLinesXY_, N, pyParams, devices.size())));
+            devices.push_back(unique_ptr<Device>(new Device(pyPntsXY_, pyPntsPhi_, pyLinesXY_, pyNlines_, N, pyParams, devices.size())));
             return PyLong_FromLongLong(devices.size() - 1);
         }
         catch (exception const*) {
