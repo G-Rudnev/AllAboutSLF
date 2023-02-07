@@ -222,7 +222,8 @@ class Line():
 def getLines(linesXY : np.ndarray, pntsXY : np.ndarray, pntsPhi : np.ndarray, Npnts : int, deep : float, continuity : float, half_dphi : float, tolerance : float) -> int:
     """#returns the number of the gotten points in lines"""
     t0 = time.time()
-    half_dphi *= 0.0174532925199432957692369
+    #half_dphi *= 0.0174532925199432957692369
+    #print(half_dphi)
     #half_dphi = 0.00523599
 
     fr = 0
@@ -260,6 +261,7 @@ def getLines(linesXY : np.ndarray, pntsXY : np.ndarray, pntsPhi : np.ndarray, Np
                         if (not (to - fr) % 2):   #делится на 2
                             line.set_with_2_pnts(pntsXY[:, fr], pntsXY[:, fr + (to - fr) // 2])
 
+                
                 if (to - fr > 2):
                     beg, end = line.set_with_LMS(pntsXY[:, fr : to])
 
@@ -280,6 +282,8 @@ def getLines(linesXY : np.ndarray, pntsXY : np.ndarray, pntsPhi : np.ndarray, Np
                             to = fr + beg - 1
                     else:
                         to += end
+
+            #print("PYTHON", fr, to)
 
         else:
             line = ex_line.copy()
