@@ -239,7 +239,8 @@ struct Device {
 
         bool extra = false;
 
-        double** ex_pnt = new double* [2]; //{0.0, 0.0};
+        double pEx_pnt_x = 0.0; // = new double* [2]; //{0.0, 0.0};
+        double pEx_pnt_y = 0.0;
 
         *(pNlines) = 0;
 
@@ -346,7 +347,7 @@ struct Device {
             }
 
             // интеграция сегмента
-            if (!line->isGap)
+            if (!(line->isGap))
             {
                 if (!prev_line->isGap)
                 {
@@ -430,16 +431,16 @@ struct Device {
                     {
                         ex_line->line[0] = tan(pPhi[fr - 1]);
                         ex_line->line[1] = 0.0;
-                        ex_line->getProjectionOfPnt(new double[] { pXY_x[to], pXY_y[to] }, new double* [] { ex_pnt[0], ex_pnt[1]});
+                        ex_line->getProjectionOfPnt(new double[] { pXY_x[to], pXY_y[to] }, new double* [] {&pEx_pnt_x, &pEx_pnt_y});//new double* [] { ex_pnt[0], ex_pnt[1]});
                         
-                        if ((sqrt(pow(*(ex_pnt[0]), 2) + pow(*(ex_pnt[1]), 2)) > sqrt(pow(pXY_x[fr - 1], 2) + pow(pXY_y[fr - 1], 2))) && (*(ex_pnt[0]) * pXY_x[fr - 1] > 0.0 or *(ex_pnt[1]) * pXY_y[fr - 1] > 0.0))
+                        if ((sqrt(pow(pEx_pnt_x, 2) + pow(pEx_pnt_y, 2)) > sqrt(pow(pXY_x[fr - 1], 2) + pow(pXY_y[fr - 1], 2))) && (pEx_pnt_x * pXY_x[fr - 1] > 0.0 or pEx_pnt_y * pXY_y[fr - 1] > 0.0))
                         {
                             *(pLines_0r + (*pNlines)) = 0.001;
                             *(pLines_1r + (*pNlines)) = 0.001;
                             (*pNlines) += 1;
 
-                            *(pLines_0r + (*pNlines)) = *(ex_pnt[0]);
-                            *(pLines_1r + (*pNlines)) = *(ex_pnt[1]);
+                            *(pLines_0r + (*pNlines)) = pEx_pnt_x;
+                            *(pLines_1r + (*pNlines)) = pEx_pnt_y;
                             (*pNlines) += 1;
 
                             *(pLines_0r + (*pNlines)) = 0.0;
@@ -451,16 +452,16 @@ struct Device {
                         {
                             ex_line->line[0] = tan(pPhi[to]);
                             ex_line->line[1] = 0.0;
-                            ex_line->getProjectionOfPnt(new double[] { pXY_x[fr - 1], pXY_y[fr - 1] }, new double* [] { ex_pnt[0], ex_pnt[1]});
+                            ex_line->getProjectionOfPnt(new double[] { pXY_x[fr - 1], pXY_y[fr - 1] }, new double* [] { &pEx_pnt_x, &pEx_pnt_y });
 
-                            if ((sqrt(pow(*(ex_pnt[0]), 2) + pow(*(ex_pnt[1]), 2)) > sqrt(pow(pXY_x[to], 2) + pow(pXY_y[to], 2))) && (*(ex_pnt[0]) * pXY_x[to] > 0.0 or *(ex_pnt[1]) * pXY_y[to] > 0.0))
+                            if ((sqrt(pow(pEx_pnt_x, 2) + pow(pEx_pnt_y, 2)) > sqrt(pow(pXY_x[to], 2) + pow(pXY_y[to], 2))) && (pEx_pnt_x * pXY_x[to] > 0.0 or pEx_pnt_y * pXY_y[to] > 0.0))
                             {
                                 *(pLines_0r + (*pNlines)) = 0.0;
                                 *(pLines_1r + (*pNlines)) = 0.0;
                                 (*pNlines) += 1;
 
-                                *(pLines_0r + (*pNlines)) = *(ex_pnt[0]);
-                                *(pLines_1r + (*pNlines)) = *(ex_pnt[1]);
+                                *(pLines_0r + (*pNlines)) = pEx_pnt_x;
+                                *(pLines_1r + (*pNlines)) = pEx_pnt_y;
                                 (*pNlines) += 1;
 
                                 *(pLines_0r + (*pNlines)) = 0.001;
