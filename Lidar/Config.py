@@ -40,7 +40,7 @@ def _print_wrp(fc):
 
 print = _print_wrp(print)
 """
-Overrided! Use kwarg "log = True" for update globalPars['MESSAGE'] with args[0] of call. Use kwarg "exc = True" for raise exception of type Exception with args[0] of call message
+Overrided! Use kwarg "log = True" to update globalPars['MESSAGE'] with args[0] of the call. Use kwarg "exc = True" to raise exception of type Exception with args[0] of the call message
 """
 
 from threading import Lock
