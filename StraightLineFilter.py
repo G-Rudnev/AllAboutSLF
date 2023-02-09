@@ -208,8 +208,9 @@ class Line():
                 pout[0] = (line.line[1] - self.line[1]) / (self.line[0] - line.line[0])
                 pout[1] = self.line[0] * pout[0] + self.line[1]
 
-def getLines(linesXY : np.ndarray, pntsXY : np.ndarray, pntsPhi : np.ndarray, Npnts : int, deep : float, continuity : float, half_dphi : float, tolerance : float) -> int:
-    """#returns the number of the gotten points in lines"""
+def getLines(linesXY : np.ndarray, linesPhi : np.ndarray, pntsXY : np.ndarray, pntsPhi : np.ndarray, Npnts : int, mount : np.ndarray, deep : float, continuity : float, half_dphi : float, tolerance : float) -> int:
+    """Mount - это позиция лидара в СК робота.\n
+    Returns the number of the gotten points in lines"""
 
     half_dphi *= 0.0174532925199432957692369
 
@@ -251,7 +252,7 @@ def getLines(linesXY : np.ndarray, pntsXY : np.ndarray, pntsPhi : np.ndarray, Np
                 if (to - fr > 2):
                     beg, end = line.set_with_LMS(pntsXY[:, fr : to])
 
-                    if beg != 0:    #если от начала точки убрали, начинается добалвение экстра линии
+                    if beg != 0:    #если от начала точки убрали, начинается добавление экстра линии
                         ex_line = line.copy()   #ex_line в интеграции используется только если текущая - разрыв
                         ex_fr = fr + beg # начало ex_line
                         ex_to = to + end # начало следующей за ex_line 
@@ -365,6 +366,13 @@ def getLines(linesXY : np.ndarray, pntsXY : np.ndarray, pntsPhi : np.ndarray, Np
         prev_line = line.copy()
         fr = to
     
+    for i in range(Nlines):
+        if (abs(linesXY[0, i]) > 0.001 or abs(linesXY[1, i]) > 0.001):
+            linesXY[:2, i] += mount[:2]
+            linesPhi[i] = atan2(linesXY[1, i], linesXY[0, i])
+        else:
+            linesPhi[i] = linesPhi[i - 1] #массив всегда начинается с точки
+        
     return Nlines
 
 
