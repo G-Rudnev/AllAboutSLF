@@ -27,9 +27,9 @@ class Lidar():
     """
 
     _rndKey = 9846    #it is just a random number
-    _IDs = 0
+    _NumOfLidars = 0
 
-    def __init__(self, rndKey, lidarSN, ax, fig):
+    def __init__(self, rndKey, lidarID, ax, fig):
         "Use create function only!!!"
 
         if (rndKey != Lidar._rndKey):
@@ -49,16 +49,22 @@ class Lidar():
             )
 
         #IDs
-        self.lidarSN = 'ffffffff'
-        self.lidarID = -1
+        self.lidarID = lidarID
+        self.lidarSN = mainDevicesPars[f"lidarSN_ID{self.lidarID}"]
+        Lidar._NumOfLidars += 1
+        self.lidarMount = np.zeros([2])    #local coordinates
+        for i, el in enumerate(mainDevicesPars[f"lidarMount_ID{self.lidarID}"].split()):
+            if i > 1:
+                break
+            self.lidarMount[i] = float(el)
 
         #MAIN DATA
         self.half_dphi = 0.3
         """in degrees"""
-        self.mountPhi = float(mainDevicesPars["lidarMountPhi"])
-        self.phiFrom = 180.0 - (float(mainDevicesPars["lidarPhiTo"]) - self.mountPhi - self.half_dphi)
+        self.mountPhi = float(mainDevicesPars[f"lidarMountPhi_ID{self.lidarID}"])
+        self.phiFrom = 180.0 - (float(mainDevicesPars[f"lidarPhiTo_ID{self.lidarID}"]) - self.mountPhi - self.half_dphi)
         """on this lidar counterclockwise is positive and 180.0 deg. shifted angle"""
-        self.phiTo = 180.0 - (float(mainDevicesPars["lidarPhiFrom"]) - self.mountPhi - self.half_dphi)
+        self.phiTo = 180.0 - (float(mainDevicesPars[f"lidarPhiFrom_ID{self.lidarID}"]) - self.mountPhi - self.half_dphi)
         """on this lidar clockwise is positive and 180.0 deg. shifted angle"""
         self.deep = 5.0
 
@@ -83,6 +89,7 @@ class Lidar():
 
         self._linesXY = np.zeros([3, self.N])
         self._linesXY[2, :] = 1.0
+        self._linesPhi = np.zeros([self.N])
         self._Nlines = 0
 
         #PUBLIC
@@ -105,16 +112,8 @@ class Lidar():
         self._isFree = threading.Event()
         self._isFree.set()
         
-        #IDs initialization
-        self.lidarID = Lidar._IDs
-        Lidar._IDs += 1
-        self.lidarSN = lidarSN
-
-        self.lidarLC = np.zeros([2])    #local coordinates
-        for i, el in enumerate(mainDevicesPars["lidarLC_" + str(self.lidarID)].split()):
-            if i > 1:
-                break
-            self.lidarLC[i] = float(el)
+        #Cpp extension initialization
+        self.cppID = Lidar._NumOfLidars - 1
 
     def _Start_wrp(self, f):
         def func(*args, **kwargs):
@@ -242,9 +241,9 @@ class Lidar():
                             if (self._xy[0, 0] == 0.0 and self._xy[1, 0] == 0.0):   #лидар отвратительно измеряет углы, если нет дистанции, а нач. и кон. угол очень важны
                                 self._phi[0] = 0.0174532925199432957692369 * (180.0 - (self.phiFrom - self.mountPhi))
                             if (self._xy[0, n - 1] == 0.0 and self._xy[1, n - 1] == 0.0):
-                                self._phi[n - 1] = 0.0174532925199432957692369 * (180.0 - (self.phiTo - self.mountPhi))
+                                self._phi[n - 1] = 0.0174532925199432957692369 * (180.0 - (self.phiTo - self.mountPhi)) # + angleOffset
 
-                            self._Nlines = SLF.getLines(self._linesXY, self._xy, self._phi, n, deep = self.deep, continuity = 0.6, half_dphi = 2.0 * self.half_dphi, tolerance = 0.1)
+                            self._Nlines = SLF.getLines(self._linesXY, self._linesPhi, self._xy, self._phi, n, self.lidarMount, deep = self.deep, continuity = 0.6, half_dphi = 2.0 * self.half_dphi, tolerance = 0.1)
 
                             xlim = self.ax.get_xlim()
                             ylim = self.ax.get_ylim()
@@ -297,11 +296,11 @@ class Lidar():
                     if (self.phiFromPositive and (angles[i] >= self.phiFrom and angles[i] < self.phiTo)) or \
                         (not self.phiFromPositive and (angles[i] >= self.phiFrom or angles[i] < self.phiTo)):
 
-                        self._phi[n] = 0.0174532925199432957692369 * (180.0 - (angles[i] - self.mountPhi))
+                        self._phi[n] = 0.0174532925199432957692369 * (180.0 - (angles[i] - self.mountPhi)) # + angleOffset
 
                         if (dists[i] > 0.1 and dists[i] < self.deep):    #it is the limit of lidar itself
-                            self._xy[0, n] = dists[i] * cos(self._phi[n]) + self.lidarLC[0]
-                            self._xy[1, n] = dists[i] * sin(self._phi[n]) + self.lidarLC[1]
+                            self._xy[0, n] = dists[i] * cos(self._phi[n])
+                            self._xy[1, n] = dists[i] * sin(self._phi[n])
                             # self._rphi[0, n] = norm(self._xy[:2, n])
                             # self._rphi[1, n] = atan2(self._xy[1, n], self._xy[0, n])
                         else:
@@ -391,13 +390,13 @@ class Lidar():
     #     self._lockXY.clear()
 
     @classmethod
-    def Create(cls, lidarSN, ax, fig):
+    def Create(cls, lidarID, ax, fig):
         "Start lidar the first one of any other devices!!!"
         try:
-            lidar = Lidar(cls._rndKey, lidarSN, ax, fig)
+            lidar = Lidar(cls._rndKey, lidarID, ax, fig)
             lidar.Start = lidar._Start_wrp(lidar.Start)
             return lidar
         except:
             if (sys.exc_info()[0] is not RoboException):
-                print('Lidar ' + str(lidar.lidarID) + ' error! ' + str(sys.exc_info()[1]) + '; line: ' + str(sys.exc_info()[2].tb_lineno))
+                print(f"Lidar {lidar.lidarID} error! {sys.exc_info()[1]}; line: {sys.exc_info()[2].tb_lineno}")
             return None
