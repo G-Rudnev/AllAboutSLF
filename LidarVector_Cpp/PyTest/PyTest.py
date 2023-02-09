@@ -3,7 +3,7 @@ import time
 import numpy as np
 import lidarVector
 from importlib import reload
-from random import randint, uniform, normalvariate
+from random import random, randint, uniform, normalvariate
 
 import math
 from math import inf as inf
@@ -25,7 +25,7 @@ import matplotlib.pyplot as plt
 from matplotlib.widgets import Button
 
 
-N = 100
+N = 1000
 
 pntsXY = [] #теперь можно импортировать, память выделяется только в главном вызове
 pntsPhi = []
@@ -453,6 +453,12 @@ def create_lidar_pnts(pnts: np.ndarray, pntsPhi: np.ndarray, pntsBuf: np.ndarray
         pnts[0, i] = pnts[0, i] - dist_noise * sin(beam_angle - pi / 2)
         pnts[1, i] = pnts[1, i] + dist_noise * cos(beam_angle - pi / 2)
         pntsPhi[i] = atan2(pnts[1, i], pnts[0, i])
+
+    if random() > 0.1:  # добавление явного разрыва
+        gap_length = randint((int) (N * 0.02), (int) (N * 0.03))
+        st_idx = randint((int) (N / 4), (int) (N * 3 / 4))
+        for i in range(st_idx, st_idx + gap_length):
+            pnts[:2, i] = 0.0
 
     pntsBuf = pnts[:2, :].copy()
 
