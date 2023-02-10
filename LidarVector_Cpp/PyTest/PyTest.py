@@ -34,6 +34,7 @@ pntsBuf = []
 #Nlines = 0
 Nlines = []
 linesXY = []
+linesPhi = []
 
 deep = 5.0
 cont = 0.6
@@ -625,13 +626,15 @@ def getNlines(device_id):
     print("CPP time", time.time() - t0)
     lns_num = Nlines[0]
 
+    print(linesPhi[:lns_num])
+
     return lns_num
 
 
 def main():
 
     global Nlines, ax, fig
-    global pntsXY, pntsPhi, pntsBuf, linesXY, listNlines
+    global pntsXY, pntsPhi, pntsBuf, linesXY, linesPhi, listNlines
     global curr_id
 
     pntsXY = np.zeros([3, N])
@@ -640,6 +643,8 @@ def main():
 
     linesXY = np.zeros([3, N])
     linesXY[2, :] = 1.0
+
+    linesPhi = np.zeros([N])
 
     Nlines = np.zeros([1], dtype=int)
 
@@ -655,7 +660,9 @@ def main():
     half_dPhi = 0.3;
     tolerance = 0.1;
 
-    id0 = lidarVector.init(pntsXY, pntsPhi, linesXY, Nlines, N, (deep, continuity, half_dPhi, tolerance))
+    mount = (0.0, 0.0)
+
+    id0 = lidarVector.init(pntsXY, pntsPhi, linesXY, linesPhi, Nlines, N, (deep, continuity, half_dPhi, tolerance, mount))
     curr_id = id0
 
     lines_num = getNlines(curr_id)
