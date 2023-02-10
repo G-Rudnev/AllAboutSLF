@@ -48,11 +48,15 @@ struct Device {
     double half_dPhi = 0.0;
     double tolerance = 0.0;
 
+    double mount_x = 0.0;
+    double mount_y = 0.0;
+
 //  ...
 
     PyArrayObject* pyPntsXY = nullptr;  //указатели на нужные объекты питона
     PyArrayObject* pyPntsPhi = nullptr;
     PyArrayObject* pyLinesXY = nullptr;
+    PyArrayObject* pyLinesPhi = nullptr;
     PyArrayObject* pyNlines = nullptr;
 
     //double** pntsXY = nullptr;  //соответствующие массивы плюсовой памяти
@@ -62,8 +66,8 @@ struct Device {
 
     Device() = default;
 
-    Device (PyArrayObject* const pyPntsXY, PyArrayObject* const pyPntsPhi, PyArrayObject* const pyLinesXY, PyArrayObject* const pyNlines, size_t Npnts, PyObject* pyParams, size_t id) : 
-        pyPntsXY(pyPntsXY), pyPntsPhi(pyPntsPhi), pyLinesXY(pyLinesXY), pyNlines(pyNlines), Npnts(Npnts), id(id),
+    Device (PyArrayObject* const pyPntsXY, PyArrayObject* const pyPntsPhi, PyArrayObject* const pyLinesXY, PyArrayObject* const pyLinesPhi, PyArrayObject* const pyNlines, size_t Npnts, PyObject* pyParams, size_t id) :
+        pyPntsXY(pyPntsXY), pyPntsPhi(pyPntsPhi), pyLinesXY(pyLinesXY), pyLinesPhi(pyLinesPhi), pyNlines(pyNlines), Npnts(Npnts), id(id),
         deep(5.0), continuity(0.6), half_dPhi(0.3 * 0.0174532925199432957692369), tolerance(0.1)
     {
 
@@ -157,8 +161,8 @@ struct Device {
             return false;
         }
 
-        if (PyTuple_GET_SIZE(pyParams) != 4) {  //кол-во параметров, не забываем менять
-            cerr << "There should be 4 parameters in a tuple" << endl; // 5-й - ссылка на единичный список Nlines
+        if (PyTuple_GET_SIZE(pyParams) != 5) {  //кол-во параметров, не забываем менять
+            cerr << "There should be 5 parameters in a tuple" << endl; // 5-й - кортеж координат монтажного положения устройства
             return false;
         }
 
@@ -167,6 +171,13 @@ struct Device {
         continuity = PyFloat_AsDouble(PyTuple_GetItem(pyParams, 1));
         half_dPhi = PyFloat_AsDouble(PyTuple_GetItem(pyParams, 2)) * 0.0174532925199432957692369;
         tolerance = PyFloat_AsDouble(PyTuple_GetItem(pyParams, 3));
+
+        mount_x = PyFloat_AsDouble(PyTuple_GetItem(PyTuple_GetItem(pyParams, 4), 0));
+        mount_y = PyFloat_AsDouble(PyTuple_GetItem(PyTuple_GetItem(pyParams, 4), 1));
+        
+        
+
+
 
 
         if (PyErr_Occurred()) {
@@ -227,6 +238,8 @@ struct Device {
 
         double* pLines_0r = (double*)PyArray_DATA(pyLinesXY);
         double* pLines_1r = pLines_0r + Npnts;
+
+        double* pLinesPhi = (double*)PyArray_DATA(pyLinesPhi);
 
         size_t fr = 0;
         size_t to = 0;
@@ -482,6 +495,21 @@ struct Device {
 
             prev_line = line->copy();
             fr = to;
+
+            for (size_t i = 0; i < (*pNlines); i++)
+            {
+                if (abs(*(pLines_0r + i)) > 0.001 || abs(*(pLines_1r + i)) > 0.001)
+                {
+                    *(pLines_0r + i) += mount_x;
+                    *(pLines_1r + i) += mount_y;
+                    *(pLinesPhi + i) = atan2(*(pLines_1r + i), *(pLines_0r + i));
+                }
+
+                else
+                {
+                    *(pLinesPhi + i) = *(pLinesPhi + i - 1);
+                }
+            }
         }
 
         //с ежекратным запросом (медленнее)
@@ -536,25 +564,27 @@ PyObject* init(PyObject*, PyObject* o) {
     //Здесь - проверки, проверки и создание объекта, если все ок
     //Возвращаает в питон id
 
-    if (PyTuple_GET_SIZE(o) == 6) {
+    if (PyTuple_GET_SIZE(o) == 7) {
 
         PyArrayObject* const pyPntsXY_ = (PyArrayObject*)PyTuple_GetItem(o, 0);
         PyArrayObject* const pyPntsPhi_ = (PyArrayObject*)PyTuple_GetItem(o, 1);
         PyArrayObject* const pyLinesXY_ = (PyArrayObject*)PyTuple_GetItem(o, 2);
-        PyArrayObject* const pyNlines_ = (PyArrayObject*)PyTuple_GetItem(o, 3);
+        PyArrayObject* const pyLinesPhi_ = (PyArrayObject*)PyTuple_GetItem(o, 3);
+        PyArrayObject* const pyNlines_ = (PyArrayObject*)PyTuple_GetItem(o, 4);
 
 
-        if (!PyLong_Check(PyTuple_GetItem(o, 4))) {
+        if (!PyLong_Check(PyTuple_GetItem(o, 5))) {
             cerr << "Bad N of points" << endl;
             return PyLong_FromLong(-1);
         }
 
-        size_t N = PyLong_AsLongLong(PyTuple_GetItem(o, 4));
-        PyObject* pyParams = PyTuple_GetItem(o, 5);
+        size_t N = PyLong_AsLongLong(PyTuple_GetItem(o, 5));
+        PyObject* pyParams = PyTuple_GetItem(o, 6);
 
         if (PyArray_NDIM(pyPntsXY_) != 2 &&
             PyArray_NDIM(pyPntsPhi_) != 1 &&
-            PyArray_NDIM(pyLinesXY_) != 2) //&& PyArray_NDIM(pyNlines_) != 1) 
+            PyArray_NDIM(pyLinesXY_) != 2 &&
+            PyArray_NDIM(pyLinesPhi_) != 1) //&& PyArray_NDIM(pyNlines_) != 1) 
         {
             cerr << "Wrong data dimensions" << endl;
             return PyLong_FromLong(-1);
@@ -572,7 +602,7 @@ PyObject* init(PyObject*, PyObject* o) {
         }
 
         try {
-            devices.push_back(unique_ptr<Device>(new Device(pyPntsXY_, pyPntsPhi_, pyLinesXY_, pyNlines_, N, pyParams, devices.size())));
+            devices.push_back(unique_ptr<Device>(new Device(pyPntsXY_, pyPntsPhi_, pyLinesXY_, pyLinesPhi_, pyNlines_, N, pyParams, devices.size())));
             return PyLong_FromLongLong(devices.size() - 1);
         }
         catch (exception const*) {
