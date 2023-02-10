@@ -100,6 +100,23 @@ class Lidar():
         #self.dx_dy_alphaE = np.array([0.0, 0.0, 0.0])
         self.LT = np.zeros([4, 4])
 
+        self.obb_L2G = Transform2D_mat(0.0, 0.0, 0.0, 1)
+        self.obb_dimensions = np.array([0.6, 0.4])
+
+        self.obb_pnts = np.array([
+            [self.obb_L2G[0, 2] + self.obb_L2G[0, 0] * self.obb_dimensions[0] + self.obb_L2G[0, 1] * self.obb_dimensions[1], \
+                self.obb_L2G[0, 2] + self.obb_L2G[0, 0] * self.obb_dimensions[0] - self.obb_L2G[0, 1] * self.obb_dimensions[1], \
+                    self.obb_L2G[0, 2] - self.obb_L2G[0, 0] * self.obb_dimensions[0] - self.obb_L2G[0, 1] * self.obb_dimensions[1], \
+                        self.obb_L2G[0, 2] - self.obb_L2G[0, 0] * self.obb_dimensions[0] + self.obb_L2G[0, 1] * self.obb_dimensions[1], \
+                            self.obb_L2G[0, 2] + self.obb_L2G[0, 0] * self.obb_dimensions[0] + self.obb_L2G[0, 1] * self.obb_dimensions[1]], \
+                \
+            [self.obb_L2G[1, 2] + self.obb_L2G[1, 0] * self.obb_dimensions[0] + self.obb_L2G[1, 1] * self.obb_dimensions[1], \
+                self.obb_L2G[1, 2] + self.obb_L2G[1, 0] * self.obb_dimensions[0] - self.obb_L2G[1, 1] * self.obb_dimensions[1], \
+                    self.obb_L2G[1, 2] - self.obb_L2G[1, 0] * self.obb_dimensions[0] - self.obb_L2G[1, 1] * self.obb_dimensions[1], \
+                        self.obb_L2G[1, 2] - self.obb_L2G[1, 0] * self.obb_dimensions[0] + self.obb_L2G[1, 1] * self.obb_dimensions[1], \
+                            self.obb_L2G[1, 2] + self.obb_L2G[1, 0] * self.obb_dimensions[0] + self.obb_L2G[1, 1] * self.obb_dimensions[1]] \
+            ])
+
         #LOCKS
         self._thread = threading.Thread()
         self._lockXY = threading.Event()
@@ -196,6 +213,9 @@ class Lidar():
             diffAngle = 0.0
             n = 0
 
+            T = 0.0
+            nT = 0
+
             while (self.ready.is_set() and threading.main_thread().is_alive()):
 
                 t0 = time.time()
@@ -245,6 +265,18 @@ class Lidar():
 
                             self._Nlines = SLF.getLines(self._linesXY, self._linesPhi, self._xy, self._phi, n, self.lidarMount, deep = self.deep, continuity = 0.6, half_dphi = 2.0 * self.half_dphi, tolerance = 0.1)
 
+                            tt = time.time()
+
+                            intersected = Is_obb_intersects_lines(self.obb_L2G, self.obb_dimensions, self._linesXY, self._Nlines)
+
+                            T += (time.time() - tt)
+
+                            nT += 1
+                            if (nT == 1000):
+                                print(T / 1000.0)
+                                T = 0.0
+                                nT = 0
+
                             xlim = self.ax.get_xlim()
                             ylim = self.ax.get_ylim()
 
@@ -253,9 +285,9 @@ class Lidar():
                             self.ax.set(xlim = xlim, ylim = ylim)
                             self.ax.set_aspect('equal')
 
-                            self.ax.scatter(self._xy[0, :n], self._xy[1, :n], s = 30, marker = 'o', color = 'gray')
+                            # self.ax.scatter(self._xy[0, :n], self._xy[1, :n], s = 30, marker = 'o', color = 'gray')
 
-                            self.ax.plot([0.0, self._linesXY[0, 0]], [0.0, self._linesXY[1, 0]], color = 'black', linewidth = 4.0)
+                            self.ax.plot([0.0, self._linesXY[0, 0]], [0.0, self._linesXY[1, 0]], color = 'black', linewidth = 3.0)
 
                             v = 0
                             while v < self._Nlines:
@@ -266,15 +298,20 @@ class Lidar():
                                     v += 1
 
                                 if (v > u + 1):
-                                    self.ax.plot(self._linesXY[0, u : v], self._linesXY[1, u : v], linewidth = 4.0)
+                                    self.ax.plot(self._linesXY[0, u : v], self._linesXY[1, u : v], linewidth = 3.0)
 
                                 if (v < self._Nlines): 
                                     if (self._linesXY[0, v] != 0.0 and self._linesXY[1, v] != 0.0):
-                                        self.ax.plot([self._linesXY[0, v - 1], self._linesXY[0, v + 1]], [self._linesXY[1, v - 1], self._linesXY[1, v + 1]], color = 'black', linewidth = 4.0)
+                                        self.ax.plot([self._linesXY[0, v - 1], self._linesXY[0, v + 1]], [self._linesXY[1, v - 1], self._linesXY[1, v + 1]], color = 'black', linewidth = 3.0)
                                 else:
-                                    self.ax.plot([self._linesXY[0, v - 1], 0.0], [self._linesXY[1, v - 1], 0.0], color = 'black', linewidth = 4.0)
+                                    self.ax.plot([self._linesXY[0, v - 1], 0.0], [self._linesXY[1, v - 1], 0.0], color = 'black', linewidth = 3.0)
 
                                 v += 1
+
+                            if (intersected >= 0):
+                                self.ax.plot(self.obb_pnts[0, :], self.obb_pnts[1, :], color = 'red', linewidth = 4.0)
+                            else:
+                                self.ax.plot(self.obb_pnts[0, :], self.obb_pnts[1, :], color = 'blue', linewidth = 4.0)
 
                             self.fig.canvas.draw_idle()
 
