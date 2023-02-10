@@ -20,6 +20,10 @@
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="LidarVector_Cpp.cpp" />
+    <ClCompile Include="Line.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="Line.h" />
   </ItemGroup>
   <PropertyGroup Label="Globals">
     <VCProjectVersion>16.0</VCProjectVersion>
@@ -82,14 +86,14 @@
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <LinkIncremental>true</LinkIncremental>
-    <OutDir>$(SolutionDir)\PyTest</OutDir>
+    <OutDir>$(SolutionDir)\..\Lidar</OutDir>
     <TargetName>lidarVector</TargetName>
     <TargetExt>.pyd</TargetExt>
     <IncludePath>C:\Python\Python38\include;C:\Python\Python38\Lib\site-packages\numpy\core\include;%(Include)</IncludePath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <LinkIncremental>true</LinkIncremental>
-    <OutDir>$(SolutionDir)\PyTest</OutDir>
+    <OutDir>$(SolutionDir)\..\Lidar</OutDir>
     <TargetName>lidarVector</TargetName>
     <TargetExt>.pyd</TargetExt>
     <IncludePath>C:\Python\Python38\include;C:\Python\Python38\Lib\site-packages\numpy\core\include;%(Include)</IncludePath>

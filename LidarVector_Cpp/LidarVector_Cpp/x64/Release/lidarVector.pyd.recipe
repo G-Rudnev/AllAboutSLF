@@ -2,7 +2,7 @@
 <Project>
   <ProjectOutputs>
     <ProjectOutput>
-      <FullPath>D:\Code\Python\AllAboutSLF\LidarVector_Cpp\PyTest\lidarVector.pyd</FullPath>
+      <FullPath>D:\Code\Python\AllAboutSLF\Lidar\lidarVector.pyd</FullPath>
     </ProjectOutput>
   </ProjectOutputs>
   <ContentFiles />
