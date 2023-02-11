@@ -93,9 +93,8 @@ class Lidar():
         self.linesXY[2, :] = 1.0
         self.Nlines = 0
 
-        _cppPars = (self.range, float(globalPars["half_track"]) * 2.0 * float(globalPars["safety_scale"]), self.half_dphi, float(mainDevicesPars[f"lidarRegressionTolerance_ID{self.lidarID}"]), self.mount)
-
         #Cpp extension initialization
+        _cppPars = (self.range, float(globalPars["half_track"]) * 2.0 * float(globalPars["safety_scale"]), self.half_dphi, float(mainDevicesPars[f"lidarRegressionTolerance_ID{self.lidarID}"]), self.mount)
         self.cppID = lidarVector.init(self._xy, self._phi, self._linesXY, self._Nlines, self._Npnts, _cppPars)
 
         if (self.cppID < 0):

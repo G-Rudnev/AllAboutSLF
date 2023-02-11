@@ -12,20 +12,21 @@ import matplotlib.pyplot as plt
 def foo(lid, ax, fig):
 
     obb_L2G = Transform2D_mat(0.2, 0.1, pi / 6, 1)
-    obb_dimensions = np.array([0.6, 0.4])
+    obb_length = 0.6
+    obb_width = 0.4
 
     obb_pnts = np.array([
-        [obb_L2G[0, 2] + obb_L2G[0, 0] * obb_dimensions[0] + obb_L2G[0, 1] * obb_dimensions[1], \
-            obb_L2G[0, 2] + obb_L2G[0, 0] * obb_dimensions[0] - obb_L2G[0, 1] * obb_dimensions[1], \
-                obb_L2G[0, 2] - obb_L2G[0, 0] * obb_dimensions[0] - obb_L2G[0, 1] * obb_dimensions[1], \
-                    obb_L2G[0, 2] - obb_L2G[0, 0] * obb_dimensions[0] + obb_L2G[0, 1] * obb_dimensions[1], \
-                        obb_L2G[0, 2] + obb_L2G[0, 0] * obb_dimensions[0] + obb_L2G[0, 1] * obb_dimensions[1]], \
+        [obb_L2G[0, 2] + obb_L2G[0, 0] * obb_length + obb_L2G[0, 1] * obb_width, \
+            obb_L2G[0, 2] + obb_L2G[0, 0] * obb_length - obb_L2G[0, 1] * obb_width, \
+                obb_L2G[0, 2] - obb_L2G[0, 0] * obb_length - obb_L2G[0, 1] * obb_width, \
+                    obb_L2G[0, 2] - obb_L2G[0, 0] * obb_length + obb_L2G[0, 1] * obb_width, \
+                        obb_L2G[0, 2] + obb_L2G[0, 0] * obb_length + obb_L2G[0, 1] * obb_width], \
             \
-        [obb_L2G[1, 2] + obb_L2G[1, 0] * obb_dimensions[0] + obb_L2G[1, 1] * obb_dimensions[1], \
-            obb_L2G[1, 2] + obb_L2G[1, 0] * obb_dimensions[0] - obb_L2G[1, 1] * obb_dimensions[1], \
-                obb_L2G[1, 2] - obb_L2G[1, 0] * obb_dimensions[0] - obb_L2G[1, 1] * obb_dimensions[1], \
-                    obb_L2G[1, 2] - obb_L2G[1, 0] * obb_dimensions[0] + obb_L2G[1, 1] * obb_dimensions[1], \
-                        obb_L2G[1, 2] + obb_L2G[1, 0] * obb_dimensions[0] + obb_L2G[1, 1] * obb_dimensions[1]] \
+        [obb_L2G[1, 2] + obb_L2G[1, 0] * obb_length + obb_L2G[1, 1] * obb_width, \
+            obb_L2G[1, 2] + obb_L2G[1, 0] * obb_length - obb_L2G[1, 1] * obb_width, \
+                obb_L2G[1, 2] - obb_L2G[1, 0] * obb_length - obb_L2G[1, 1] * obb_width, \
+                    obb_L2G[1, 2] - obb_L2G[1, 0] * obb_length + obb_L2G[1, 1] * obb_width, \
+                        obb_L2G[1, 2] + obb_L2G[1, 0] * obb_length + obb_L2G[1, 1] * obb_width] \
         ])
 
     # T = 0.0
@@ -40,7 +41,7 @@ def foo(lid, ax, fig):
         
         # tt = time.time()  #контроль времени, можно убрать
 
-        intersected = Is_obb_intersects_lines(obb_L2G, obb_dimensions, lid.linesXY, Nlines)
+        intersected = Is_obb_intersects_lines(obb_L2G, obb_length, obb_width, lid.linesXY, Nlines)
 
         # T += (time.time() - tt)
         # nT += 1

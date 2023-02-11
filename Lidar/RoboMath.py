@@ -74,13 +74,13 @@ def RotateAroundPnt2D_mat(Oz, pnt):
         [sin(Oz), cos(Oz),  pnt[1] * (1 - cos(Oz)) + pnt[0] * sin(Oz)], \
         [0.0, 0.0, 1.0] ])
 
-def Is_obb_intersects_lines(obb_L2G : np.ndarray, obb_dimensions : np.ndarray, linesXY : np.ndarray, Nlines):
+def Is_obb_intersects_lines(obb_L2G : np.ndarray, obb_half_length, obb_half_width, linesXY : np.ndarray, Nlines):
     """obb - is oriented bounding box, obb_dimension is a vector: {half_length, half_width}"""
 
     #FrontUp radius
-    obb_r1 = np.array([obb_L2G[0, 0] * obb_dimensions[0] + obb_L2G[0, 1] * obb_dimensions[1], obb_L2G[1, 0] * obb_dimensions[0] + obb_L2G[1, 1] * obb_dimensions[1]])
+    obb_r1 = np.array([obb_L2G[0, 0] * obb_half_length + obb_L2G[0, 1] * obb_half_width, obb_L2G[1, 0] * obb_half_length + obb_L2G[1, 1] * obb_half_width])
     #FrontDown radius
-    obb_r2 = np.array([obb_L2G[0, 0] * obb_dimensions[0] - obb_L2G[0, 1] * obb_dimensions[1], obb_L2G[1, 0] * obb_dimensions[0] - obb_L2G[1, 1] * obb_dimensions[1]])
+    obb_r2 = np.array([obb_L2G[0, 0] * obb_half_length - obb_L2G[0, 1] * obb_half_width, obb_L2G[1, 0] * obb_half_length - obb_L2G[1, 1] * obb_half_width])
     #OBB is symmetric, so only 2 radii out of 4
 
     seg_r = np.zeros([2])
