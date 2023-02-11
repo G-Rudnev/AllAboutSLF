@@ -38,12 +38,7 @@ struct Device {
 
     queue<void (Device::*) ()> foosQueue;   //очередь функций объекта
 
-    size_t Npnts = 0;  //in variable
-
-    //size_t* Nlines = 0; //out variable
-
-    //double par0 = 0.0;  //параметры
-    double deep = 0.0;
+    double range = 0.0;
     double continuity = 0.0;
     double half_dPhi = 0.0;
     double tolerance = 0.0;
@@ -51,41 +46,43 @@ struct Device {
     double mount_x = 0.0;
     double mount_y = 0.0;
 
-//  ...
-
     PyArrayObject* pyPntsXY = nullptr;  //указатели на нужные объекты питона
     PyArrayObject* pyPntsPhi = nullptr;
+    PyArrayObject* pyNpnts = nullptr;  //out variable
     PyArrayObject* pyLinesXY = nullptr;
-    PyArrayObject* pyLinesPhi = nullptr;
-    PyArrayObject* pyNlines = nullptr;
+    PyArrayObject* pyNlines = nullptr;  //out variable
 
-    //double** pntsXY = nullptr;  //соответствующие массивы плюсовой памяти
-    //double* pntsPhi = nullptr;
-    //double** linesXY = nullptr;
+    double* pXY_x = nullptr;   //0-й ряд 
+    double* pXY_y = nullptr;                    //1-й ряд
+    double* pPhi = nullptr;
 
+    size_t* pNpnts = nullptr;
+    size_t* pNlines = nullptr;
+
+    double* pLines_x = nullptr;
+    double* pLines_y = nullptr;
 
     Device() = default;
 
-    Device (PyArrayObject* const pyPntsXY, PyArrayObject* const pyPntsPhi, PyArrayObject* const pyLinesXY, PyArrayObject* const pyLinesPhi, PyArrayObject* const pyNlines, size_t Npnts, PyObject* pyParams, size_t id) :
-        pyPntsXY(pyPntsXY), pyPntsPhi(pyPntsPhi), pyLinesXY(pyLinesXY), pyLinesPhi(pyLinesPhi), pyNlines(pyNlines), Npnts(Npnts), id(id),
-        deep(5.0), continuity(0.6), half_dPhi(0.3 * 0.0174532925199432957692369), tolerance(0.1)
+    Device (PyArrayObject* const pyPntsXY, PyArrayObject* const pyPntsPhi, PyArrayObject* const pyLinesXY, PyArrayObject* const pyNlines, PyArrayObject* const pyNpnts, PyObject* pyParams, size_t id) :
+        pyPntsXY(pyPntsXY), pyPntsPhi(pyPntsPhi), pyLinesXY(pyLinesXY), pyNlines(pyNlines), pyNpnts(pyNpnts), id(id),
+        range(5.0), continuity(0.6), half_dPhi(0.3 * 0.0174532925199432957692369), tolerance(0.1)
     {
 
         if (!setParams(pyParams)) {
             throw new logic_error("");  //память еще не выделилась, можно не заморачиваться с чисткой
         }
 
-        //setParams(pyParams);
+        //связывание с объектами Py
+        pNpnts = (size_t*)PyArray_DATA(pyNpnts);
+        pNlines = (size_t*)PyArray_DATA(pyNlines);
 
-        //pntsXY = new double* [2];
-        //linesXY = new double* [2];
-        //for (int i = 0; i < 2; i++) {
-        //    pntsXY[i] = new double[Npnts];
-        //    //linesXY[i] = new double[Npnts]; ////////////////////////////////////////////////////////////////////
-        //}
+        pXY_x = (double*)PyArray_DATA(pyPntsXY);   //0-й ряд 
+        pXY_y = pXY_x + *pNpnts;                    //1-й ряд
+        pPhi = (double*)PyArray_DATA(pyPntsPhi);
 
-
-        //pntsPhi = new double[Npnts];
+        pLines_x = (double*)PyArray_DATA(pyLinesXY);
+        pLines_y = pLines_x + *pNpnts;
 
         thr = thread([this]     //запускаем поток
             {
@@ -166,20 +163,14 @@ struct Device {
             return false;
         }
 
-        //par0 = PyFloat_AsDouble(PyTuple_GetItem(pyParams, 0));  //здесь столько параметров, колько нужно надо прописать
-        deep = PyFloat_AsDouble(PyTuple_GetItem(pyParams, 0));
+        range = PyFloat_AsDouble(PyTuple_GetItem(pyParams, 0));
         continuity = PyFloat_AsDouble(PyTuple_GetItem(pyParams, 1));
         half_dPhi = PyFloat_AsDouble(PyTuple_GetItem(pyParams, 2)) * 0.0174532925199432957692369;
         tolerance = PyFloat_AsDouble(PyTuple_GetItem(pyParams, 3));
 
-        mount_x = PyFloat_AsDouble(PyTuple_GetItem(PyTuple_GetItem(pyParams, 4), 0));
-        mount_y = PyFloat_AsDouble(PyTuple_GetItem(PyTuple_GetItem(pyParams, 4), 1));
+        mount_x = *((double*)PyArray_DATA((PyArrayObject*)PyTuple_GetItem(pyParams, 4)));
+        mount_y = *((double*)PyArray_DATA((PyArrayObject*)PyTuple_GetItem(pyParams, 4)) + 1);
         
-        
-
-
-
-
         if (PyErr_Occurred()) {
             cerr << "Wrong type inside the parameters" << endl;
             PyErr_Clear();
@@ -189,58 +180,9 @@ struct Device {
         return true;
     }
 
-    //inline void pushPnts() {
-
-    //    //СОВЕРШЕННО НЕ ОБЯЗАТЕЛЬНО ПОЛЬЗОВАТЬ PUSH ФУКНЦИЮ И РАСЧЕТНУЮ ОТДЕЛЬНО, МОЖНО ИСХИТРИТЬСЯ И НА ОДНУ ОБЩУЮ,
-    //    //УКАЗАТЕЛИ НА САМИ ДАННЫЕ (pXY_0r, ..) МОЖНО И В ОБЪЕКТ ДОБАВИТЬ, ОБЕСПЕЧИВАЯ В ДАЛЬНЕЙШЕМ НЕИЗМЕННОСТЬ АЛЛОКАЦИИ В ПИТОНЕ.
-    //    //БЕЗ КОПИРОВАНИЯ ЗДЕСЬ В ПУШЕ, А С РАСЧЕТАМИ НАПРЯМУЮ БУДЕТ МАКСИМАЛЬНО БЫСТРО - НУЖНО СМОТРЕТЬ ПО РЕАЛИЗАЦИИ КАК ВЫХОДИТ УДОБНЕЕ.
-
-    //    //cout << "pushPnts() on id " << id << endl;
-
-    //    double* pXY_0r = (double*)PyArray_DATA(pyPntsXY);   //0-й ряд
-    //    double* pXY_1r = pXY_0r + Npnts;                    //1-й ряд
-    //    double* pPhi = (double*)PyArray_DATA(pyPntsPhi);
-
-    //    for (size_t i = 0; i < Npnts; i++) {
-    //        pntsXY[0][i] = *(pXY_0r + i);
-    //        pntsXY[1][i] = *(pXY_1r + i);
-    //        pntsPhi[i] = *(pPhi + i);
-    //    }
-
-    //    //С ежекратным запросом (медленнее)
-    //    //for (size_t i = 0; i < Npnts; i++) {
-    //    //    pntsXY[0][i] = *(double*)PyArray_GETPTR2(pyPntsXY, 0, i);
-    //    //    pntsXY[1][i] = *(double*)PyArray_GETPTR2(pyPntsXY, 1, i);
-    //    //    pntsPhi[i] = *(double*)PyArray_GETPTR1(pyPntsPhi, i);
-    //    //}
-    //}
-
     void calcLines() {
-        //Нужно еще выбрасывать Nlines, можно через связанный pyParams.
-        //Расчетов мало на прототипе - выигрыш по времени ещё не такой большой.
- 
-        //cout << "pullLinesXY() on id " << id << endl;
 
-        // Это я просто скопировал из pushPnts
-        // Получение точек из Python сюда
-        double* pXY_x = (double*)PyArray_DATA(pyPntsXY);   //0-й ряд 
-        double* pXY_y = pXY_x + Npnts;                    //1-й ряд
-        double* pPhi = (double*)PyArray_DATA(pyPntsPhi);
-
-        size_t* pNlines = (size_t*)PyArray_DATA(pyNlines);
-
-        /*for (size_t i = 0; i < Npnts; i++)  //////////////////////////////////////////////////////////////////////////////////////
-        {
-            pntsXY[0][i] = *(pXY_x + i);
-            pntsXY[1][i] = *(pXY_y + i);
-            pntsPhi[i] = *(pPhi + i);
-        }*/
-
-        double* pLines_0r = (double*)PyArray_DATA(pyLinesXY);
-        double* pLines_1r = pLines_0r + Npnts;
-
-        double* pLinesPhi = (double*)PyArray_DATA(pyLinesPhi);
-
+        // Получение точек из Python 
         size_t fr = 0;
         size_t to = 0;
         size_t ex_fr = 0;
@@ -260,7 +202,7 @@ struct Device {
         long* edges; // для результата setWithLMS - смещения от краёв отрезка
         vector<double>* segPntsXY; // точки сформированного отрезка
 
-        while (fr < Npnts) 
+        while (fr < *pNpnts) 
         {
             // формирование сегмента
             if (!extra)
@@ -269,7 +211,7 @@ struct Device {
                 {
                     line->isGap = true;
                     to = fr + 1;
-                    while ((to < Npnts) && ((pXY_x[to] == 0.0) && pXY_y[to] == 0.0))
+                    while ((to < *pNpnts) && ((pXY_x[to] == 0.0) && pXY_y[to] == 0.0))
                         to++;
                 }
                 
@@ -279,11 +221,11 @@ struct Device {
                     line->setAsTangentWithOnePnt(new double[] { pXY_x[fr], pXY_y[fr] });
                     to = fr + 1;
 
-                    if ((to < Npnts) && (pXY_x[to] != 0.0 || pXY_y[to] != 0.0) && (sqrt(pow(pXY_x[to] - pXY_x[fr], 2) + pow(pXY_y[to] - pXY_y[fr], 2)) <= continuity))
+                    if ((to < *pNpnts) && (pXY_x[to] != 0.0 || pXY_y[to] != 0.0) && (sqrt(pow(pXY_x[to] - pXY_x[fr], 2) + pow(pXY_y[to] - pXY_y[fr], 2)) <= continuity))
                     {
                         line->setWithTwoPnts(new double[] { pXY_x[fr], pXY_y[fr] }, new double[] { pXY_x[to], pXY_y[to] });
                         to++;
-                        while ((to < Npnts) && (pXY_x[to] != 0.0 || pXY_y[to] != 0) && (line->getDistanceToPnt(new double[] { pXY_x[to], pXY_y[to] }) <= tolerance))
+                        while ((to < *pNpnts) && (pXY_x[to] != 0.0 || pXY_y[to] != 0) && (line->getDistanceToPnt(new double[] { pXY_x[to], pXY_y[to] }) <= tolerance))
                         {
                             to++;
                             if ((to - fr) % 2 == 0)
@@ -364,16 +306,16 @@ struct Device {
             {
                 if (!prev_line->isGap)
                 {
-                    prev_line->getIntersection(line, new double* [] { pLines_0r + (*pNlines), pLines_1r + (*pNlines) });
-                    double interAngle = atan2(pLines_1r[(*pNlines)], pLines_0r[(*pNlines)]);
+                    prev_line->getIntersection(line, new double* [] { pLines_x + (*pNlines), pLines_y + (*pNlines) });
+                    double interAngle = atan2(pLines_y[(*pNlines)], pLines_x[(*pNlines)]);
                     if (((interAngle > pPhi[fr - 1]) || (interAngle < pPhi[fr])) && ((interAngle > pPhi[fr]) || (interAngle < pPhi[fr - 1])))
                     {
-                        prev_line->getProjectionOfPntEx(new double[] { pXY_x[fr - 1], pXY_y[fr - 1] }, new double*[] { pLines_0r + (*pNlines), pLines_1r + (*pNlines) }, half_dPhi, false);
+                        prev_line->getProjectionOfPntEx(new double[] { pXY_x[fr - 1], pXY_y[fr - 1] }, new double*[] { pLines_x + (*pNlines), pLines_y + (*pNlines) }, half_dPhi, false);
                         (*pNlines) += 1;
                         if (sqrt(pow(pXY_x[fr] - pXY_x[fr - 1], 2) + pow(pXY_y[fr] - pXY_y[fr - 1], 2)) > continuity)
                         {
-                            *(pLines_0r + (*pNlines)) = 0.001;
-                            *(pLines_1r + (*pNlines)) = 0.001;
+                            pLines_x[*pNlines] = 0.001;
+                            pLines_y[*pNlines] = 0.001;
                             (*pNlines) += 1;
                         }
 
@@ -386,13 +328,13 @@ struct Device {
 
                 if (prev_line->isGap)
                 {
-                    line->getProjectionOfPntEx(new double[] { pXY_x[fr], pXY_y[fr] }, new double* [] { pLines_0r + (*pNlines), pLines_1r + (*pNlines) }, half_dPhi, true);
+                    line->getProjectionOfPntEx(new double[] { pXY_x[fr], pXY_y[fr] }, new double* [] { pLines_x + (*pNlines), pLines_y + (*pNlines) }, half_dPhi, true);
                     (*pNlines) += 1;
                 }
 
-                if (to >= Npnts)
+                if (to >= *pNpnts)
                 {
-                    line->getProjectionOfPntEx(new double[] { pXY_x[to - 1], pXY_y[to - 1] }, new double* [] { pLines_0r + (*pNlines), pLines_1r + (*pNlines) }, half_dPhi, false);
+                    line->getProjectionOfPntEx(new double[] { pXY_x[to - 1], pXY_y[to - 1] }, new double* [] { pLines_x + (*pNlines), pLines_y + (*pNlines) }, half_dPhi, false);
                     (*pNlines) += 1;
                 }
             }
@@ -401,42 +343,42 @@ struct Device {
             {
                 if (fr == 0)
                 {
-                    if (to < Npnts)
+                    if (to < *pNpnts)
                     {
                         ex_line->line[0] = tan(pPhi[0]);
                         ex_line->line[1] = 0.0;
-                        ex_line->getProjectionOfPnt(new double[] { pXY_x[to], pXY_y[to] }, new double* [] { pLines_0r, pLines_1r});
-                        *(pLines_0r + 1) = 0.0;
-                        *(pLines_1r + 1) = 0.0;
+                        ex_line->getProjectionOfPnt(new double[] { pXY_x[to], pXY_y[to] }, new double* [] { pLines_x, pLines_y});
+                        pLines_x[1] = 0.0;
+                        pLines_y[1] = 0.0;
                         (*pNlines) = 2;
                     }
 
                     else
                     {
-                        *pLines_0r = deep * cos(pPhi[0]);
-                        *pLines_1r = deep * sin(pPhi[0]);
-                        *(pLines_0r + 1) = 0.0;
-                        *(pLines_1r + 1) = 0.0;
-                        *(pLines_0r + 2) = deep * cos(pPhi[Npnts - 1]);
-                        *(pLines_1r + 2) = deep * sin(pPhi[Npnts - 1]);
+                        pLines_x[0] = range * cos(pPhi[0]);
+                        pLines_y[0] = range * sin(pPhi[0]);
+                        pLines_x[1] = 0.0;
+                        pLines_y[1] = 0.0;
+                        pLines_x[2] = range * cos(pPhi[*pNpnts - 1]);
+                        pLines_y[2] = range * sin(pPhi[*pNpnts - 1]);
                         (*pNlines) = 3;
                     }
                 }
 
                 else
                 {
-                    prev_line->getProjectionOfPntEx(new double[] { pXY_x[fr - 1], pXY_y[fr - 1] }, new double* [] { pLines_0r + (*pNlines), pLines_1r + (*pNlines) }, half_dPhi, false);
+                    prev_line->getProjectionOfPntEx(new double[] { pXY_x[fr - 1], pXY_y[fr - 1] }, new double* [] { pLines_x + (*pNlines), pLines_y + (*pNlines) }, half_dPhi, false);
                     (*pNlines)++;
 
-                    if (to >= Npnts)
+                    if (to >= *pNpnts)
                     {
-                        *(pLines_0r + (*pNlines)) = 0.0;
-                        *(pLines_1r + (*pNlines)) = 0.0;
+                        pLines_x[*pNlines] = 0.0;
+                        pLines_y[*pNlines] = 0.0;
                         (*pNlines) += 1;
 
-                        ex_line->line[0] = tan(pPhi[Npnts - 1]);
+                        ex_line->line[0] = tan(pPhi[*pNpnts - 1]);
                         ex_line->line[1] = 0.0;
-                        ex_line->getProjectionOfPnt(new double[] { pXY_x[fr - 1], pXY_y[fr - 1] }, new double* [] { pLines_0r + (*pNlines), pLines_1r + (*pNlines)});
+                        ex_line->getProjectionOfPnt(new double[] { pXY_x[fr - 1], pXY_y[fr - 1] }, new double* [] { pLines_x + (*pNlines), pLines_y + (*pNlines)});
                         (*pNlines) += 1;
                     }
 
@@ -448,16 +390,16 @@ struct Device {
                         
                         if ((sqrt(pow(pEx_pnt_x, 2) + pow(pEx_pnt_y, 2)) > sqrt(pow(pXY_x[fr - 1], 2) + pow(pXY_y[fr - 1], 2))) && (pEx_pnt_x * pXY_x[fr - 1] > 0.0 or pEx_pnt_y * pXY_y[fr - 1] > 0.0))
                         {
-                            *(pLines_0r + (*pNlines)) = 0.001;
-                            *(pLines_1r + (*pNlines)) = 0.001;
+                            pLines_x[*pNlines] = 0.001;
+                            pLines_y[*pNlines] = 0.001;
                             (*pNlines) += 1;
 
-                            *(pLines_0r + (*pNlines)) = pEx_pnt_x;
-                            *(pLines_1r + (*pNlines)) = pEx_pnt_y;
+                            pLines_x[*pNlines] = pEx_pnt_x;
+                            pLines_y[*pNlines] = pEx_pnt_y;
                             (*pNlines) += 1;
 
-                            *(pLines_0r + (*pNlines)) = 0.0;
-                            *(pLines_1r + (*pNlines)) = 0.0;
+                            pLines_x[*pNlines] = 0.0;
+                            pLines_y[*pNlines] = 0.0;
                             (*pNlines) += 1;
                         }
 
@@ -469,23 +411,23 @@ struct Device {
 
                             if ((sqrt(pow(pEx_pnt_x, 2) + pow(pEx_pnt_y, 2)) > sqrt(pow(pXY_x[to], 2) + pow(pXY_y[to], 2))) && (pEx_pnt_x * pXY_x[to] > 0.0 or pEx_pnt_y * pXY_y[to] > 0.0))
                             {
-                                *(pLines_0r + (*pNlines)) = 0.0;
-                                *(pLines_1r + (*pNlines)) = 0.0;
+                                pLines_x[*pNlines] = 0.0;
+                                pLines_y[*pNlines] = 0.0;
                                 (*pNlines) += 1;
 
-                                *(pLines_0r + (*pNlines)) = pEx_pnt_x;
-                                *(pLines_1r + (*pNlines)) = pEx_pnt_y;
+                                pLines_x[*pNlines] = pEx_pnt_x;
+                                pLines_y[*pNlines] = pEx_pnt_y;
                                 (*pNlines) += 1;
 
-                                *(pLines_0r + (*pNlines)) = 0.001;
-                                *(pLines_1r + (*pNlines)) = 0.001;
+                                pLines_x[*pNlines] = 0.001;
+                                pLines_y[*pNlines] = 0.001;
                                 (*pNlines) += 1;
                             }
 
                             else
                             {
-                                *(pLines_0r + (*pNlines)) = 0.0;
-                                *(pLines_1r + (*pNlines)) = 0.0;
+                                pLines_x[*pNlines] = 0.0;
+                                pLines_y[*pNlines] = 0.0;
                                 (*pNlines) += 1;
                             }
                         }
@@ -495,32 +437,17 @@ struct Device {
 
             prev_line = line->copy();
             fr = to;
-
-            for (size_t i = 0; i < (*pNlines); i++)
-            {
-                if (abs(*(pLines_0r + i)) > 0.001 || abs(*(pLines_1r + i)) > 0.001)
-                {
-                    *(pLines_0r + i) += mount_x;
-                    *(pLines_1r + i) += mount_y;
-                    *(pLinesPhi + i) = atan2(*(pLines_1r + i), *(pLines_0r + i));
-                }
-
-                else
-                {
-                    *(pLinesPhi + i) = *(pLinesPhi + i - 1);
-                }
-            }
         }
 
-        //с ежекратным запросом (медленнее)
-        //for (size_t i = 0; i < Nlines; i++) {
-        //    *(double*)PyArray_GETPTR2(pyLinesXY, 0, i) = pntsXY[0][i] * pntsXY[0][i] * pntsPhi[i];
-        //    *(double*)PyArray_GETPTR2(pyLinesXY, 1, i) = pntsXY[1][i] * pntsXY[1][i] * pntsPhi[i];
-        //}
+        for (size_t i = 0; i < (*pNlines); i++)
+            if (abs(pLines_x[i]) > 0.001 || abs(pLines_y[i]) > 0.001)
+            {
+                pLines_x[i] += mount_x;
+                pLines_y[i] += mount_y;
+            }
     }
 
 };
-
 
 //Основной глобальный контейнер устройств (указателей на них)
 vector<unique_ptr<Device>> devices; //с unique_ptr будет вывзываться деструктор по завершению отдельного устройства
@@ -557,34 +484,29 @@ PyObject* pyFun(PyObject*, PyObject* o) {
     return PyLong_FromLong(-1);
 }
 
-
 PyObject* init(PyObject*, PyObject* o) {
 
     //После завершения расчетных функций, нужно задуматься и о quit() и об reinit() - для полноты картины, тут и деструкторы понадобятся.
     //Здесь - проверки, проверки и создание объекта, если все ок
     //Возвращаает в питон id
 
-    if (PyTuple_GET_SIZE(o) == 7) {
+    cout << " CPP " << endl;
+
+    if (PyTuple_GET_SIZE(o) == 6) {
 
         PyArrayObject* const pyPntsXY_ = (PyArrayObject*)PyTuple_GetItem(o, 0);
         PyArrayObject* const pyPntsPhi_ = (PyArrayObject*)PyTuple_GetItem(o, 1);
         PyArrayObject* const pyLinesXY_ = (PyArrayObject*)PyTuple_GetItem(o, 2);
-        PyArrayObject* const pyLinesPhi_ = (PyArrayObject*)PyTuple_GetItem(o, 3);
-        PyArrayObject* const pyNlines_ = (PyArrayObject*)PyTuple_GetItem(o, 4);
 
+        PyArrayObject* const pyNlines_ = (PyArrayObject*)PyTuple_GetItem(o, 3);
 
-        if (!PyLong_Check(PyTuple_GetItem(o, 5))) {
-            cerr << "Bad N of points" << endl;
-            return PyLong_FromLong(-1);
-        }
+        PyArrayObject* const pyNpnts_ = (PyArrayObject*)PyTuple_GetItem(o, 4);
 
-        size_t N = PyLong_AsLongLong(PyTuple_GetItem(o, 5));
-        PyObject* pyParams = PyTuple_GetItem(o, 6);
+        PyObject* pyParams = PyTuple_GetItem(o, 5);
 
         if (PyArray_NDIM(pyPntsXY_) != 2 &&
             PyArray_NDIM(pyPntsPhi_) != 1 &&
-            PyArray_NDIM(pyLinesXY_) != 2 &&
-            PyArray_NDIM(pyLinesPhi_) != 1) //&& PyArray_NDIM(pyNlines_) != 1) 
+            PyArray_NDIM(pyLinesXY_) != 2) //&& PyArray_NDIM(pyNlines_) != 1) 
         {
             cerr << "Wrong data dimensions" << endl;
             return PyLong_FromLong(-1);
@@ -602,7 +524,7 @@ PyObject* init(PyObject*, PyObject* o) {
         }
 
         try {
-            devices.push_back(unique_ptr<Device>(new Device(pyPntsXY_, pyPntsPhi_, pyLinesXY_, pyLinesPhi_, pyNlines_, N, pyParams, devices.size())));
+            devices.push_back(unique_ptr<Device>(new Device(pyPntsXY_, pyPntsPhi_, pyLinesXY_, pyNlines_, pyNpnts_, pyParams, devices.size())));
             return PyLong_FromLongLong(devices.size() - 1);
         }
         catch (exception const*) {
@@ -617,9 +539,9 @@ PyObject* init(PyObject*, PyObject* o) {
 static PyMethodDef lidarVector_methods[] = {
     { "init", (PyCFunction)init, METH_VARARGS, ""},
     //{ "pushPnts", (PyCFunction)pyFun<&Device::pushPnts>, METH_O, ""},
-    { "calcLines", (PyCFunction)pyFun<&Device::calcLines>, METH_O, ""},
+    { "calcLines", (PyCFunction)pyFun<&Device::calcLines>, METH_O, "Non-blocking! Calculates lines by points"},
     //{ "getNlines", (PyCFunction)pyFun<&Device::getNlines>, METH_O, "" },
-    { "synchronize", (PyCFunction)pyFun<nullptr>, METH_O, ""},
+    { "synchronize", (PyCFunction)pyFun<nullptr>, METH_O, "Waits for all the previous calls to return or returns immediately"},
     { nullptr, nullptr, 0, nullptr }
 };
 
