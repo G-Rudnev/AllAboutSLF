@@ -490,8 +490,6 @@ PyObject* init(PyObject*, PyObject* o) {
     //Здесь - проверки, проверки и создание объекта, если все ок
     //Возвращаает в питон id
 
-    cout << " CPP " << endl;
-
     if (PyTuple_GET_SIZE(o) == 6) {
 
         PyArrayObject* const pyPntsXY_ = (PyArrayObject*)PyTuple_GetItem(o, 0);
