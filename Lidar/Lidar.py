@@ -79,11 +79,11 @@ class Lidar():
         self._xy = np.zeros([3, self.N])
         self._xy[2, :] = 1.0
         self._phi = np.zeros([self.N])
-        self._Npnts = np.array([self.N], dtype = np.int64)
+        self._Npnts = np.array([self.N], dtype = np.uint64)
 
         self._linesXY = np.zeros([3, self.N])
         self._linesXY[2, :] = 1.0
-        self._Nlines = np.zeros([1], dtype = np.int64)
+        self._Nlines = np.zeros([1], dtype = np.uint64)
 
         #PUBLIC
         self.linesXY = np.zeros([3, self.N])
@@ -109,7 +109,7 @@ class Lidar():
 
     def _Start_wrp(self, f):
         def func(*args, **kwargs):
-            if (self._isFree.wait(timeout = 0.25)):  #for the case of delayed stopping
+            if (self._isFree.wait(timeout = 0.5)):  #for the case of delayed stopping
                 self._thread = threading.Thread(target = f, args = args, kwargs = kwargs)
                 self._thread.start()
                 while self._thread.isAlive() and not self.ready.is_set():
@@ -259,13 +259,15 @@ class Lidar():
         finally:
             self.ready.clear()
             if self.ser.is_open:
+                # print('Lidar port closing')
                 self.ser.close()
             self._isFree.set()
     
     def Stop(self):
         """Stops the lidar"""
+    ####WE HAVE TO USE NON-BLOCKING STOP BECAUSE OF SOME WORK LOGIC MOMENTS, TO BE RELEVANT IN START THERE IS A _isFree.wait() ON START
         self.ready.clear()
-        self._isFree.wait(timeout = 5.0)
+        # self._isFree.wait(timeout = 5.0) 
 
     @classmethod
     def Create(cls, lidarID):
@@ -278,6 +280,10 @@ class Lidar():
             if (sys.exc_info()[0] is not RoboException):
                 print(f"Lidar {lidar.lidarID} error! {sys.exc_info()[1]}; line: {sys.exc_info()[2].tb_lineno}")
             return None
+
+    def Release(self):
+        print("py releasing")
+        lidarVector.release(self.cppID)
 
     def GetLinesXY(self, pauseIfOld = 0.001):
         with self._mutex:
