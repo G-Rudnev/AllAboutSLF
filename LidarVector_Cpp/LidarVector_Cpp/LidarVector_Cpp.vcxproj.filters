@@ -15,15 +15,15 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="..\..\..\..\Robo\Cpp\LidarVector_Cpp.cpp">
+    <ClCompile Include="LidarVector_Cpp.cpp">
       <Filter>Исходные файлы</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\..\..\Robo\Cpp\Line.cpp">
+    <ClCompile Include="Line.cpp">
       <Filter>Исходные файлы</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="..\..\..\..\Robo\Cpp\Line.h">
+    <ClInclude Include="Line.h">
       <Filter>Файлы заголовков</Filter>
     </ClInclude>
   </ItemGroup>
