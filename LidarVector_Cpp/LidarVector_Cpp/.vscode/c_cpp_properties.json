@@ -1,0 +1,37 @@
+{
+    "configurations": [
+        // {
+        //     "name": "Linux",
+        //     "includePath": [
+        //         "${workspaceFolder}/**",
+        //         "/usr/include/python3.7/",
+        //         "/usr/include/python3.7/numpy/"
+        //     ],
+        //     "defines": [],
+        //     "compilerPath": "/usr/bin/gcc",
+        //     "cStandard": "gnu17",
+        //     "cppStandard": "gnu++17",
+        //     "intelliSenseMode": "linux-gcc-arm"
+        // },
+        {
+            "name": "windows-gcc-x64",
+            "includePath": [
+              "${workspaceFolder}\\**",
+              "C:\\Python\\Python38\\include",
+              "C:\\Python\\Python38\\Lib\\site-packages\\numpy\\core\\include"
+            ],
+            "defines": [
+              "_DEBUG",
+              "UNICODE",
+              "_UNICODE"
+            ],
+            "windowsSdkVersion": "10.0.19041.0",
+            "compilerPath": "C:/Program Files/mingw-w64/x86_64-8.1.0-posix-seh-rt_v6-rev0/bin/gcc.exe",
+            "cStandard": "gnu17",
+            "cppStandard": "gnu++17",
+            "intelliSenseMode": "windows-gcc-x64",
+            "compilerArgs": []
+          }
+    ],
+    "version": 4
+}

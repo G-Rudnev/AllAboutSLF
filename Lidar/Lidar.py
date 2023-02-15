@@ -4,7 +4,6 @@ import time
 import threading
 import numpy as np
 from numpy.linalg import norm as norm 
-import math
 from math import inf as inf
 from math import pi as pi
 from math import pow as pow
@@ -17,8 +16,6 @@ from RoboMath import*   #always needed
 from Config import*     #always needed
 
 import lidarVector
-
-import StraightLineFilter as SLF
 
 __all__ = ['Lidar']
 
@@ -82,11 +79,11 @@ class Lidar():
         self._xy = np.zeros([3, self.N])
         self._xy[2, :] = 1.0
         self._phi = np.zeros([self.N])
-        self._Npnts = np.array([self.N])
+        self._Npnts = np.array([self.N], dtype = np.int64)
 
         self._linesXY = np.zeros([3, self.N])
         self._linesXY[2, :] = 1.0
-        self._Nlines = np.zeros([1], dtype = int)
+        self._Nlines = np.zeros([1], dtype = np.int64)
 
         #PUBLIC
         self.linesXY = np.zeros([3, self.N])
@@ -101,7 +98,7 @@ class Lidar():
             print("Bad inputs for cpp extension", exc = True)  
 
         #LOCKS
-        self._thread = threading.Thread()
+        self._thread = []
         self._mutex = threading.RLock()
 
         #EVENTS AND HANDLES
@@ -175,8 +172,6 @@ class Lidar():
             self.ser.write(b'\xa5\x60')  
             skippedBytes = self.ser.read(19) #Далее идут полезные пакеты с облаками
 
-            self.ready.set()
-
             def AngCorrect(dist):
                 if (dist):
                     return 57.295779513 * atan(0.0218 / dist - 0.14037347)  #in degrees
@@ -189,6 +184,7 @@ class Lidar():
             diffAngle = 0.0
             n = 0
 
+            self.ready.set()
             while (self.ready.is_set() and threading.main_thread().is_alive()):
 
                 t0 = time.time()
@@ -263,14 +259,13 @@ class Lidar():
         finally:
             self.ready.clear()
             if self.ser.is_open:
-                # print('Lidar port closing')
                 self.ser.close()
             self._isFree.set()
     
     def Stop(self):
         """Stops the lidar"""
-    ####NO NEED TO WAIT PORT TO GET CLOSED TILL IT REALLY STOPS, THERE IS A SMALL TIMEOUT FOR THE CLOSE NEXT START  
         self.ready.clear()
+        self._isFree.wait(timeout = 5.0)
 
     @classmethod
     def Create(cls, lidarID):

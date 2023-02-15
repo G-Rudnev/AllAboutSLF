@@ -19,11 +19,11 @@
     </ProjectConfiguration>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="LidarVector_Cpp.cpp" />
-    <ClCompile Include="Line.cpp" />
+    <ClCompile Include="..\..\..\..\Robo\Cpp\LidarVector_Cpp.cpp" />
+    <ClCompile Include="..\..\..\..\Robo\Cpp\Line.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="Line.h" />
+    <ClInclude Include="..\..\..\..\Robo\Cpp\Line.h" />
   </ItemGroup>
   <PropertyGroup Label="Globals">
     <VCProjectVersion>16.0</VCProjectVersion>

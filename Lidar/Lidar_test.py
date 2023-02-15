@@ -11,6 +11,8 @@ import matplotlib.pyplot as plt
 
 def foo(lid, ax, fig):
 
+    time.sleep(0.2)
+
     obb_L2G = Transform2D_mat(0.2, 0.1, pi / 6, 1)
     obb_half_length = 0.6
     obb_half_width = 0.4
@@ -29,6 +31,8 @@ def foo(lid, ax, fig):
                         obb_L2G[1, 2] + obb_L2G[1, 0] * obb_half_length + obb_L2G[1, 1] * obb_half_width] \
         ])
 
+    # seg = np.array([[0.6, 10.0], [0.4, 0.8]])
+
     # T = 0.0
     # nT = 0
 
@@ -41,6 +45,7 @@ def foo(lid, ax, fig):
         
         # tt = time.time()  #контроль времени, можно убрать
 
+        # intersected = Is_segment_intersects_lines(seg[:, 0], seg[:, 1], lid.linesXY, Nlines)
         intersected = Is_obb_intersects_lines(obb_L2G, obb_half_length, obb_half_width, lid.linesXY, Nlines)
 
         # T += (time.time() - tt)
@@ -80,24 +85,31 @@ def foo(lid, ax, fig):
             v += 1
 
         if (intersected >= 0):
+            # ax.plot(seg[0, :], seg[1, :], color = 'red', linewidth = 4.0)
             ax.plot(obb_pnts[0, :], obb_pnts[1, :], color = 'red', linewidth = 4.0)
         else:
+            # ax.plot(seg[0, :], seg[1, :], color = 'blue', linewidth = 4.0)
             ax.plot(obb_pnts[0, :], obb_pnts[1, :], color = 'blue', linewidth = 4.0)
 
         fig.canvas.draw_idle()
 
-fig = plt.figure()
-ax = plt.axes([0.07, 0.25, 0.45, 0.7])
-ax.set(xlim = (-1, 5), ylim = (-5, 5))
-ax.set_aspect('equal')
+def main():
 
-lid0 = Lidar.Lidar.Create(0)
+    fig = plt.figure()
+    ax = plt.axes([0.07, 0.25, 0.45, 0.7])
+    ax.set(xlim = (-1, 5), ylim = (-5, 5))
+    ax.set_aspect('equal')
 
-while not lid0.Start():
-    time.sleep(1.0)
+    lid0 = Lidar.Lidar.Create(0)
 
-threading.Thread(target=foo, args = (lid0, ax, fig)).start()
+    while not lid0.Start():
+        time.sleep(1.0)
 
-plt.show()
+    threading.Thread(target=foo, args = (lid0, ax, fig)).start()
 
-exit()
+    plt.show()
+
+    exit()
+
+if __name__ == "__main__":
+    main()

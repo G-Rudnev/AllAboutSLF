@@ -74,6 +74,73 @@ def RotateAroundPnt2D_mat(Oz, pnt):
         [sin(Oz), cos(Oz),  pnt[1] * (1 - cos(Oz)) + pnt[0] * sin(Oz)], \
         [0.0, 0.0, 1.0] ])
 
+def Is_segment_intersects_lines(p0 : np.ndarray, p1 : np.ndarray, linesXY : np.ndarray, Nlines):
+    
+    seg_r = np.array([(p1[0] - p0[0]) / 2.0, (p1[1] - p0[1]) / 2.0])
+    seg_c = p0 + seg_r
+
+    lines_seg_r = np.zeros([2])
+
+    L0 = np.zeros([2]) #axis along segment normal
+    L1 = np.zeros([2]) #axis along lines segment normal
+
+    if (seg_r[0] != 0.0):
+        L0[0] = seg_r[1] / seg_r[0]
+        L0[1] = -1.0
+    else:
+        L0[0] = -1.0
+        L0[1] = 0
+
+    T = np.zeros([2])
+
+    n = 0
+    while n < Nlines - 1:
+
+        if (abs(linesXY[0, n]) < 0.01 and abs(linesXY[1, n]) < 0.01):
+            n += 1
+            continue
+
+        if (abs(linesXY[0, n + 1]) < 0.01 and abs(linesXY[1, n + 1] < 0.01)):
+            n += 2
+            continue
+
+        lines_seg_r[0] = (linesXY[0, n + 1] - linesXY[0, n]) / 2.0
+        lines_seg_r[1] = (linesXY[1, n + 1] - linesXY[1, n]) / 2.0
+
+        T[0] = linesXY[0, n] + lines_seg_r[0] - seg_c[0]
+        T[1] = linesXY[1, n] + lines_seg_r[1] - seg_c[1] 
+
+    #L0 along segment normal
+
+        abs_T_L = abs(np.dot(T, L0))
+        abs_lines_seg_r_L = abs(np.dot(lines_seg_r, L0))
+        # abs_seg_r_L = 0.0
+
+        if (abs_T_L > abs_lines_seg_r_L):
+            n += 1
+            continue
+
+    #L1 along lines_segment normal
+
+        if (lines_seg_r[0] != 0.0):
+            L1[0] = lines_seg_r[1] / lines_seg_r[0]
+            L1[1] = -1.0
+        else:
+            L1[0] = -1.0
+            L1[1] = 0
+
+        abs_T_L = abs(np.dot(T, L1))
+        # abs_lines_seg_r_L = 0.0
+        abs_seg_r_L = abs(np.dot(seg_r, L1))
+
+        if (abs_T_L > abs_seg_r_L):
+            n += 1
+            continue
+
+        return n    #intersecting with segment n .. n + 1 and maybe others
+    
+    return -1   #non-intersecting at all
+
 def Is_obb_intersects_lines(obb_L2G : np.ndarray, obb_half_length, obb_half_width, linesXY : np.ndarray, Nlines):
     """obb - is oriented bounding box, obb_dimension is a vector: {half_length, half_width}"""
 
@@ -83,9 +150,9 @@ def Is_obb_intersects_lines(obb_L2G : np.ndarray, obb_half_length, obb_half_widt
     obb_r2 = np.array([obb_L2G[0, 0] * obb_half_length - obb_L2G[0, 1] * obb_half_width, obb_L2G[1, 0] * obb_half_length - obb_L2G[1, 1] * obb_half_width])
     #OBB is symmetric, so only 2 radii out of 4
 
-    seg_r = np.zeros([2])
+    lines_seg_r = np.zeros([2])
 
-    L0 = np.zeros([2]) #axis along segment
+    L0 = np.zeros([2]) #axis normal to segment
     L1 = np.zeros([2]) #axis along length of obb
     L2 = np.zeros([2]) #axis along width of obb
     L1[:] = obb_L2G[:2, 0]
@@ -104,23 +171,23 @@ def Is_obb_intersects_lines(obb_L2G : np.ndarray, obb_half_length, obb_half_widt
             n += 2
             continue
 
-        seg_r[0] = (linesXY[0, n + 1] - linesXY[0, n]) / 2.0
-        seg_r[1] = (linesXY[1, n + 1] - linesXY[1, n]) / 2.0
+        lines_seg_r[0] = (linesXY[0, n + 1] - linesXY[0, n]) / 2.0
+        lines_seg_r[1] = (linesXY[1, n + 1] - linesXY[1, n]) / 2.0
 
-        T[0] = linesXY[0, n] + seg_r[0] - obb_L2G[0, 2] 
-        T[1] = linesXY[1, n] + seg_r[1] - obb_L2G[1, 2] 
+        T[0] = linesXY[0, n] + lines_seg_r[0] - obb_L2G[0, 2] 
+        T[1] = linesXY[1, n] + lines_seg_r[1] - obb_L2G[1, 2] 
 
     #L0 along segment
 
-        if (seg_r[0] != 0.0):
-            L0[0] = seg_r[1] / seg_r[0]
+        if (lines_seg_r[0] != 0.0):
+            L0[0] = lines_seg_r[1] / lines_seg_r[0]
             L0[1] = -1.0
         else:
             L0[0] = -1.0
             L0[1] = 0
 
         abs_T_L = abs(np.dot(T, L0))
-        # abs_seg_r_L = 0.0
+        # abs_lines_seg_r_L = 0.0
         abs_obb_r1_L = abs(np.dot(obb_r1, L0))
         abs_obb_r2_L = abs(np.dot(obb_r2, L0))
 
@@ -135,30 +202,30 @@ def Is_obb_intersects_lines(obb_L2G : np.ndarray, obb_half_length, obb_half_widt
     #L1 along length of obb
 
         abs_T_L = abs(np.dot(T, L1))
-        abs_seg_r_L = abs(np.dot(seg_r, L1))
+        abs_lines_seg_r_L = abs(np.dot(lines_seg_r, L1))
         abs_obb_r1_L = abs(np.dot(obb_r1, L1))
         abs_obb_r2_L = abs(np.dot(obb_r2, L1))
 
         if (abs_obb_r1_L >= abs_obb_r2_L):
-            if (abs_T_L > (abs_obb_r1_L + abs_seg_r_L)):
+            if (abs_T_L > (abs_obb_r1_L + abs_lines_seg_r_L)):
                 n += 1
                 continue
-        elif (abs_T_L > (abs_obb_r2_L + abs_seg_r_L)):
+        elif (abs_T_L > (abs_obb_r2_L + abs_lines_seg_r_L)):
             n += 1
             continue
 
     #L2 along width of obb
 
         abs_T_L = abs(np.dot(T, L2))
-        abs_seg_r_L = abs(np.dot(seg_r, L2))
+        abs_lines_seg_r_L = abs(np.dot(lines_seg_r, L2))
         abs_obb_r1_L = abs(np.dot(obb_r1, L2))
         abs_obb_r2_L = abs(np.dot(obb_r2, L2))
 
         if (abs_obb_r1_L >= abs_obb_r2_L):
-            if (abs_T_L > (abs_obb_r1_L + abs_seg_r_L)):
+            if (abs_T_L > (abs_obb_r1_L + abs_lines_seg_r_L)):
                 n += 1
                 continue
-        elif (abs_T_L > (abs_obb_r2_L + abs_seg_r_L)):
+        elif (abs_T_L > (abs_obb_r2_L + abs_lines_seg_r_L)):
             n += 1
             continue
 
