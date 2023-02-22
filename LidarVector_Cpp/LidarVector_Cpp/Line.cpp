@@ -18,7 +18,6 @@ Line::Line(double qOk):
 	_sums(new double[5] {0.0, 0.0, 0.0, 0.0, 0.0}) 
 {}
 
-
 double* Line::LMS(vector<double> X, vector<double> Y, size_t fr, size_t to, double* sums) 
 {
 	/*
@@ -76,7 +75,6 @@ double* Line::LMS(vector<double> X, vector<double> Y, size_t fr, size_t to, doub
 		return new double[3] { A2, C2, distsSum2 / N };
 }
 
-
 Line* Line::copy() 
 {
 	Line* cp_line = new Line();
@@ -96,7 +94,6 @@ Line* Line::copy()
 	return cp_line;
 }
 
-
 void Line::setAsTangentWithOnePnt(double* p) 
 {
 	// p[0] = x, p[1] = y
@@ -115,7 +112,6 @@ void Line::setAsTangentWithOnePnt(double* p)
 	this->isSingle = true;
 }
 
-
 void Line::setWithTwoPnts(double* p1, double* p2) 
 {
 	double dx = p2[0] - p1[0];
@@ -132,16 +128,6 @@ void Line::setWithTwoPnts(double* p1, double* p2)
 	}
 	this->isSingle = false;
 }
-
-
-//size_t* Line::setWithLMS(double** pnts, bool best) {
-//	
-//	//size_t N =  sizeof(*pnts) / sizeof(**pnts);
-//	// cout << sizeof(**pnts) << endl;
-//	size_t N = 0;
-//	return new size_t[] {0, N};
-//}
-
 
 long* Line::setWithLMS(vector<double>* pnts, bool best) 
 {
@@ -231,7 +217,6 @@ long* Line::setWithLMS(vector<double>* pnts, bool best)
 		return new long[2] { 0, 0 };
 }
 
-
 double Line::getDistanceToPnt(double* p, bool sgnd) 
 {
 	if (sgnd) 
@@ -251,7 +236,6 @@ double Line::getDistanceToPnt(double* p, bool sgnd)
 	}
 }
 
-
 void Line::getProjectionOfPnt(double* p, double** pout) 
 {
 	if (!isinf(this->line[0]))
@@ -265,7 +249,6 @@ void Line::getProjectionOfPnt(double* p, double** pout)
 		*pout[1] = p[1];
 	}
 }
-
 
 void Line::getProjectionOfPntEx(double* p, double** pout, double half_dPhi, bool direction) 
 {
@@ -302,7 +285,6 @@ void Line::getProjectionOfPntEx(double* p, double** pout, double half_dPhi, bool
 	}
 }
 
-
 void Line::getIntersection(Line* line, double** pout) 
 {
 	if (this->line[0] == line->line[0])
@@ -332,7 +314,6 @@ void Line::getIntersection(Line* line, double** pout)
 		}
 	}
 }
-
 
 void Line::lol() 
 {

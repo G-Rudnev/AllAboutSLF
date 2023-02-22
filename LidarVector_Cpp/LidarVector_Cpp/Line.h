@@ -1,7 +1,6 @@
 #pragma once
 #include <vector>
 
-
 class Line {
 public:
 	double* line; // парметры А и С

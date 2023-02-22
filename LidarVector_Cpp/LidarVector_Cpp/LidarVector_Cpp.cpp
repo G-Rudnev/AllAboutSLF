@@ -1,7 +1,7 @@
 #define PY_SSIZE_T_CLEAN
 #include "Python.h"
 #define NPY_NO_DEPRECATED_API NPY_1_7_API_VERSION
-#include "numpy/arrayobject.h"
+#include "numpy\\arrayobject.h"
 
 #pragma warning(disable:4996)		//unsafe functions
 
@@ -22,38 +22,34 @@ using namespace std;
 
 struct Device {
 
-    size_t id = -1;
+    queue<void (Device::*) ()> foosQueue;   //очередь функций объекта
 
-    thread thr; //РїРѕС‚РѕРє, РєРѕС‚РѕСЂС‹Р№ Р±СѓРґРµС‚ РѕС‚РІРµС‡Р°С‚СЊ Р·Р° РѕР±СЂР°Р±РѕС‚РєСѓ РѕР±СЉРµРєС‚Р°
-
-    mutex mxCall;   //РјСЊСЋС‚РµРєСЃ РїРѕ РІС‹Р·РѕРІР°Рј Рё РґРѕР±Р°РІР»РµРЅРёСЋ С„СѓРЅРєС†РёР№ РІ РѕС‡РµСЂРµРґСЊ
-    mutex mxProcess;    //РјСЊСЋС‚РµРєСЃ РїРѕ РєРѕРЅС‚СЂРѕР»СЋ Р·Р°РІРµСЂС€РµРЅРёСЏ СЂР°СЃС‡РµС‚РѕРІ
-
-    condition_variable cvCall; //СЃРѕРѕС‚РІРµС‚СЃС‚РІСѓСЋС‰РёРµ cv
+    thread thr; //поток, который будет отвечать за обработку объекта
+    
+    condition_variable cvCall; //соответствующие cv
     condition_variable cvProcess;
 
-    bool process = true;    //С„Р»Р°Рі Р·Р°РІРµСЂС€РµРЅРёСЏ СЂР°СЃС‡РµС‚РѕРІ
+    mutex mxCall;   //мьютекс по вызовам и добавлению функций в очередь
+    mutex mxProcess;    //мьютекс по контролю завершения расчетов
 
-    bool alive = true;  //С„Р»Р°Рі Р¶РёР·РЅРё РїРѕС‚РѕРєР° thr
+    bool process = true;    //флаг завершения расчетов
 
-    queue<void (Device::*) ()> foosQueue;   //РѕС‡РµСЂРµРґСЊ С„СѓРЅРєС†РёР№ РѕР±СЉРµРєС‚Р°
+    double range;
+    double continuity;
+    double half_dPhi;
+    double tolerance;
 
-    double range = 0.0;
-    double continuity = 0.0;
-    double half_dPhi = 0.0;
-    double tolerance = 0.0;
+    double mount_x;
+    double mount_y;
 
-    double mount_x = 0.0;
-    double mount_y = 0.0;
+    PyArrayObject* pyPntsXY;  //указатели на нужные объекты питона
+    PyArrayObject* pyPntsPhi;
+    PyArrayObject* pyNpnts;  //out variable
+    PyArrayObject* pyLinesXY;
+    PyArrayObject* pyNlines;  //out variable
 
-    PyArrayObject* pyPntsXY = nullptr;  //СѓРєР°Р·Р°С‚РµР»Рё РЅР° РЅСѓР¶РЅС‹Рµ РѕР±СЉРµРєС‚С‹ РїРёС‚РѕРЅР°
-    PyArrayObject* pyPntsPhi = nullptr;
-    PyArrayObject* pyNpnts = nullptr;  //out variable
-    PyArrayObject* pyLinesXY = nullptr;
-    PyArrayObject* pyNlines = nullptr;  //out variable
-
-    double* pXY_x = nullptr;   //0-Р№ СЂСЏРґ 
-    double* pXY_y = nullptr;                    //1-Р№ СЂСЏРґ
+    double* pXY_x = nullptr;   //0-й ряд 
+    double* pXY_y = nullptr;                    //1-й ряд
     double* pPhi = nullptr;
 
     size_t* pNpnts = nullptr;
@@ -62,104 +58,84 @@ struct Device {
     double* pLines_x = nullptr;
     double* pLines_y = nullptr;
 
+    size_t id = -1;
+
     Device() = default;
 
     Device (PyArrayObject* const pyPntsXY, PyArrayObject* const pyPntsPhi, PyArrayObject* const pyLinesXY, PyArrayObject* const pyNlines, PyArrayObject* const pyNpnts, PyObject* pyParams, size_t id) :
         pyPntsXY(pyPntsXY), pyPntsPhi(pyPntsPhi), pyLinesXY(pyLinesXY), pyNlines(pyNlines), pyNpnts(pyNpnts), id(id),
-        range(5.0), continuity(0.6), half_dPhi(0.3 * 0.0174532925199432957692369), tolerance(0.1)
+        range(5.0), continuity(0.6), half_dPhi(0.3 * 0.0174532925199432957692369), tolerance(0.1), mount_x(0.0), mount_y(0.0)
     {
 
         if (!setParams(pyParams)) {
-            throw new logic_error("");  //РїР°РјСЏС‚СЊ РµС‰Рµ РЅРµ РІС‹РґРµР»РёР»Р°СЃСЊ, РјРѕР¶РЅРѕ РЅРµ Р·Р°РјРѕСЂР°С‡РёРІР°С‚СЊСЃСЏ СЃ С‡РёСЃС‚РєРѕР№
+            throw new logic_error("");
         }
 
-        //СЃРІСЏР·С‹РІР°РЅРёРµ СЃ РѕР±СЉРµРєС‚Р°РјРё Py
+        //связывание с объектами Py
         pNpnts = (size_t*)PyArray_DATA(pyNpnts);
         pNlines = (size_t*)PyArray_DATA(pyNlines);
 
-        pXY_x = (double*)PyArray_DATA(pyPntsXY);   //0-Р№ СЂСЏРґ 
-        pXY_y = pXY_x + *pNpnts;                    //1-Р№ СЂСЏРґ
+        pXY_x = (double*)PyArray_DATA(pyPntsXY);   //0-й ряд 
+        pXY_y = pXY_x + *pNpnts;                    //1-й ряд
         pPhi = (double*)PyArray_DATA(pyPntsPhi);
 
         pLines_x = (double*)PyArray_DATA(pyLinesXY);
         pLines_y = pLines_x + *pNpnts;
 
-        thr = thread([this]     //Р·Р°РїСѓСЃРєР°РµРј РїРѕС‚РѕРє
+        thr = thread([this]     //запускаем поток
             {
-                while (this->alive) {
+                while (true) {
+                    unique_lock lk0(mxCall);
+                    cvCall.wait(lk0, [this] {return foosQueue.size(); });   //ждун вызова через pyFun
 
-                    for (;;) {
+                    auto foo = foosQueue.front(); //берем функцию с края очереди
 
-                        unique_lock lk0(this->mxCall);
-                        this->cvCall.wait(lk0, [this] {return !this->alive || this->foosQueue.size(); });   //Р¶РґСѓРЅ РІС‹Р·РѕРІР° С‡РµСЂРµР· pyFun
-                        
-                        if (this->alive) {
+                    if (foo != nullptr)
+                        (this->*foo) ();    //вызываем её
 
-                            auto foo = this->foosQueue.front(); //Р±РµСЂРµРј С„СѓРЅРєС†РёСЋ СЃ РєСЂР°СЏ РѕС‡РµСЂРµРґРё
+                    foosQueue.pop();  //удаляем из очереди
 
-                            if (foo != nullptr)
-                                (this->*foo) ();    //РІС‹Р·С‹РІР°РµРј РµС‘
-
-                            this->foosQueue.pop();  //СѓРґР°Р»СЏРµРј РёР· РѕС‡РµСЂРµРґРё
-
-                            if (this->foosQueue.empty()) {
-                                unique_lock lk1(this->mxProcess);   
-                                this->process = true;   //РјРµРЅСЏРµРј СЃРѕСЃС‚РѕСЏРЅРёРµ РґР»СЏ cv РїСЂРѕС†РµСЃСЃР°, С„СѓРЅРєС†РёСЏ pyFun<nullptr>, С‚.Рµ. synchronize() РёР· РїРёС‚РѕРЅР°, СЃРјРѕР¶РµС‚ Р·Р°РІРµСЂС€РёС‚СЊСЃСЏ
-                                lk1.unlock();
-                                cvProcess.notify_one(); //СѓРІРµРґРѕРјР»СЏРµРј cv Рѕ Р·Р°РІРµСЂС€РµРЅРёРё СЂР°СЃС‡РµС‚РѕРІ
-
-                                cvCall.notify_one();
-                                lk0.unlock();
-                                break;
-                            }
-                        }
-                        else {
-                            cvCall.notify_one();
-                            lk0.unlock();
-                            break;
-                        }
-                        cvCall.notify_one();
-                        lk0.unlock();
+                    if (foosQueue.empty()) {
+                        unique_lock lk1(mxProcess);   
+                        process = true;   //меняем состояние для cv процесса, функция pyFun<nullptr>, т.е. synchronize() из питона, сможет завершиться
+                        lk1.unlock();
+                        cvProcess.notify_one(); //уведомляем cv о завершении расчетов
                     }
+
+                    lk0.unlock();
                 }
             }
         );
     }
 
     ~Device() {
-        //РќР• РћРЎРћР‘Рћ РќРЈР–РќРћР• РЈР”РћР’РћР›Р¬РЎРўР’РР•, РќРћ Р•РЎРўР¬
-        //РџРёС‚РѕРЅР° РєСЂР°С€РёС‚ РјРѕРґСѓР»Рё РІРµСЃСЊРјР° РєСѓСЃРѕС‡РЅРѕ Рё РЅРµ РєРѕРЅСЃРёСЃС‚РµРЅС‚РЅРѕ, РїРѕСЌС‚РѕРјСѓ РјРѕР¶РµС‚ РґР°Р¶Рµ РїРѕРґРІРµСЃРёС‚СЊ РєР°РєСѓСЋ-РЅРёР±СѓРґСЊ СЂР°Р±РѕС‚Р°СЋС‰СѓСЋ С„СѓРЅРєС†РёСЋ.
-        //РќР°Рј РЅРµ СЃРёР»СЊРЅРѕ СЌС‚Рѕ РІР°Р¶РЅРѕ, С‚Р°Рє РєР°Рє РїСЂРµРґРїРѕР»Р°РіР°РµС‚СЃСЏ СЃСѓС‰РµСЃС‚РІРѕРІР°РЅРёРµ РѕР±СЉРµРєС‚Р° РІСЃРµ РІСЂРµРјСЏ СЂР°Р±РѕС‚С‹ РїСЂРѕРіСЂР°РјРјС‹, РЅСѓ, РёР»Рё РїРѕС‡С‚Рё РІСЃРµ.
-        //РўРµРј РЅРµ РјРµРЅРµРµ, РµСЃР»Рё СЂР°Р·СЂР°Р±Р°С‚С‹РІР°С‚СЊ quit() СЌС‚РѕС‚ РґРµСЃС‚СЂСѓРєС‚РѕСЂ РїСЂРёРіРѕРґРёС‚СЃСЏ.
+        //НЕ ОСОБО НУЖНОЕ УДОВОЛЬСТВИЕ, НО ЕСТЬ
+        //Питона крашит модули весьма кусочно и не консистентно, поэтому может даже подвесить какую-нибудь работающую функцию.
+        //Нам не сильно это важно, так как предполагается существование объекта все время работы программы, ну, или почти все.
+        //Тем не менее, если разрабатывать quit() этот деструктор пригодится.
 
         cout << "Device " << id << " destructor starts" << endl;
 
-        unique_lock lk1(mxCall);    //Р¶РґРµС‚ Р·Р°РІРµСЂС€РµРЅРёСЏ РІС‹Р·РѕРІР° pyFun
-
         unique_lock lk0(mxProcess);
-        cvProcess.wait(lk0, [this] {return this->process; }); //Р¶РґРµС‚ Р·Р°РІРµСЂС€РµРЅРёСЏ СЂР°СЃС‡РµС‚РЅРѕР№ РѕС‡РµСЂРµРґРё С„СѓРЅРєС†РёР№
+        cvProcess.wait(lk0, [this] { return process; }); //ждет завершения расчетной очереди функций
         lk0.unlock();
 
-        alive = false;  //РІС‹РєР»СЋС‡Р°РµС‚ РїРµС‚Р»СЋ РїРѕС‚РѕРєР°
-        lk1.unlock();
-        cvCall.notify_all();
-
-        thr.join();
+        thr.join(); //оказывается, компилятор и сам завершит поток в бесконечном цикле при разрушении cv
 
         cout << "Device " << id << " destructor ends normally" << endl;
     }
 
     bool setParams(PyObject* pyParams) {
 
-        //РњРѕР¶РЅРѕ Рё getParams() СЃРґРµР»Р°С‚СЊ, РЅРѕ РїРѕРєР° СЌС‚Рѕ РЅРµРѕР±СЏР·Р°С‚РµР»СЊРЅРѕ
+        //Можно и getParams() сделать, но пока это необязательно
 
         if (!PyTuple_Check(pyParams)) {
             cerr << "Parameters should be in a tuple" << endl;
             return false;
         }
 
-        if (PyTuple_GET_SIZE(pyParams) != 5) {  //РєРѕР»-РІРѕ РїР°СЂР°РјРµС‚СЂРѕРІ, РЅРµ Р·Р°Р±С‹РІР°РµРј РјРµРЅСЏС‚СЊ
-            cerr << "There should be 5 parameters in a tuple" << endl; // 5-Р№ - РєРѕСЂС‚РµР¶ РєРѕРѕСЂРґРёРЅР°С‚ РјРѕРЅС‚Р°Р¶РЅРѕРіРѕ РїРѕР»РѕР¶РµРЅРёСЏ СѓСЃС‚СЂРѕР№СЃС‚РІР°
+        if (PyTuple_GET_SIZE(pyParams) != 5) {  //кол-во параметров, не забываем менять
+            cerr << "There should be 5 parameters in a tuple" << endl; // 5-й - кортеж координат монтажного положения устройства
             return false;
         }
 
@@ -182,7 +158,7 @@ struct Device {
 
     void calcLines() {
 
-        // РџРѕР»СѓС‡РµРЅРёРµ С‚РѕС‡РµРє РёР· Python 
+        // Получение точек из Python 
         size_t fr = 0;
         size_t to = 0;
         size_t ex_fr = 0;
@@ -194,17 +170,17 @@ struct Device {
 
         bool extra = false;
 
-        double pEx_pnt_x = 0.0; // = new double* [2]; //{0.0, 0.0};
+        double pEx_pnt_x = 0.0; // = new double*[2]; //{0.0, 0.0};
         double pEx_pnt_y = 0.0;
 
         *(pNlines) = 0;
 
-        long* edges; // РґР»СЏ СЂРµР·СѓР»СЊС‚Р°С‚Р° setWithLMS - СЃРјРµС‰РµРЅРёСЏ РѕС‚ РєСЂР°С‘РІ РѕС‚СЂРµР·РєР°
-        vector<double>* segPntsXY; // С‚РѕС‡РєРё СЃС„РѕСЂРјРёСЂРѕРІР°РЅРЅРѕРіРѕ РѕС‚СЂРµР·РєР°
+        long* edges; // для результата setWithLMS - смещения от краёв отрезка
+        vector<double>* segPntsXY; // точки сформированного отрезка
 
         while (fr < *pNpnts) 
         {
-            // С„РѕСЂРјРёСЂРѕРІР°РЅРёРµ СЃРµРіРјРµРЅС‚Р°
+            // формирование сегмента
             if (!extra)
             {
                 if ((pXY_x[fr] == 0.0) && (pXY_y[fr] == 0.0))
@@ -218,20 +194,20 @@ struct Device {
                 else
                 {
                     line->isGap = false;
-                    line->setAsTangentWithOnePnt(new double[] { pXY_x[fr], pXY_y[fr] });
+                    line->setAsTangentWithOnePnt(new double[2] { pXY_x[fr], pXY_y[fr] });
                     to = fr + 1;
 
                     if ((to < *pNpnts) && (pXY_x[to] != 0.0 || pXY_y[to] != 0.0) && (sqrt(pow(pXY_x[to] - pXY_x[fr], 2) + pow(pXY_y[to] - pXY_y[fr], 2)) <= continuity))
                     {
-                        line->setWithTwoPnts(new double[] { pXY_x[fr], pXY_y[fr] }, new double[] { pXY_x[to], pXY_y[to] });
+                        line->setWithTwoPnts(new double[2] { pXY_x[fr], pXY_y[fr] }, new double[2] { pXY_x[to], pXY_y[to] });
                         to++;
-                        while ((to < *pNpnts) && (pXY_x[to] != 0.0 || pXY_y[to] != 0) && (line->getDistanceToPnt(new double[] { pXY_x[to], pXY_y[to] }) <= tolerance))
+                        while ((to < *pNpnts) && (pXY_x[to] != 0.0 || pXY_y[to] != 0) && (line->getDistanceToPnt(new double[2] { pXY_x[to], pXY_y[to] }) <= tolerance))
                         {
                             to++;
                             if ((to - fr) % 2 == 0)
                             {
                                 size_t mid_to = fr + (size_t)(floor((to - fr) / 2.0));
-                                line->setWithTwoPnts(new double[] { pXY_x[fr], pXY_y[fr] }, new double[] { pXY_x[mid_to], pXY_y[mid_to] });
+                                line->setWithTwoPnts(new double[2] { pXY_x[fr], pXY_y[fr] }, new double[2] { pXY_x[mid_to], pXY_y[mid_to] });
                             }
                         }
                     }
@@ -266,7 +242,7 @@ struct Device {
 
                             else if (edges[0] == 2)
                             {
-                                line->setWithTwoPnts(new double[] { pXY_x[fr], pXY_y[fr] }, new double[] { pXY_x[fr + 1], pXY_y[fr + 1] });
+                                line->setWithTwoPnts(new double[2] { pXY_x[fr], pXY_y[fr] }, new double[2] { pXY_x[fr + 1], pXY_y[fr + 1] });
                                 to = fr + 1;
                             }
 
@@ -301,16 +277,16 @@ struct Device {
                 extra = false;
             }
 
-            // РёРЅС‚РµРіСЂР°С†РёСЏ СЃРµРіРјРµРЅС‚Р°
+            // интеграция сегмента
             if (!(line->isGap))
             {
                 if (!prev_line->isGap)
                 {
-                    prev_line->getIntersection(line, new double* [] { pLines_x + (*pNlines), pLines_y + (*pNlines) });
+                    prev_line->getIntersection(line, new double*[2] { pLines_x + (*pNlines), pLines_y + (*pNlines) });
                     double interAngle = atan2(pLines_y[(*pNlines)], pLines_x[(*pNlines)]);
                     if (((interAngle > pPhi[fr - 1]) || (interAngle < pPhi[fr])) && ((interAngle > pPhi[fr]) || (interAngle < pPhi[fr - 1])))
                     {
-                        prev_line->getProjectionOfPntEx(new double[] { pXY_x[fr - 1], pXY_y[fr - 1] }, new double*[] { pLines_x + (*pNlines), pLines_y + (*pNlines) }, half_dPhi, false);
+                        prev_line->getProjectionOfPntEx(new double[2] { pXY_x[fr - 1], pXY_y[fr - 1] }, new double*[2] { pLines_x + (*pNlines), pLines_y + (*pNlines) }, half_dPhi, false);
                         (*pNlines) += 1;
                         if (sqrt(pow(pXY_x[fr] - pXY_x[fr - 1], 2) + pow(pXY_y[fr] - pXY_y[fr - 1], 2)) > continuity)
                         {
@@ -328,18 +304,18 @@ struct Device {
 
                 if (prev_line->isGap)
                 {
-                    line->getProjectionOfPntEx(new double[] { pXY_x[fr], pXY_y[fr] }, new double* [] { pLines_x + (*pNlines), pLines_y + (*pNlines) }, half_dPhi, true);
+                    line->getProjectionOfPntEx(new double[2] { pXY_x[fr], pXY_y[fr] }, new double*[2] { pLines_x + (*pNlines), pLines_y + (*pNlines) }, half_dPhi, true);
                     (*pNlines) += 1;
                 }
 
                 if (to >= *pNpnts)
                 {
-                    line->getProjectionOfPntEx(new double[] { pXY_x[to - 1], pXY_y[to - 1] }, new double* [] { pLines_x + (*pNlines), pLines_y + (*pNlines) }, half_dPhi, false);
+                    line->getProjectionOfPntEx(new double[2] { pXY_x[to - 1], pXY_y[to - 1] }, new double*[2] { pLines_x + (*pNlines), pLines_y + (*pNlines) }, half_dPhi, false);
                     (*pNlines) += 1;
                 }
             }
 
-            else // СЃСЋРґР° РЅР° РјРѕРёС… РґР°РЅРЅС‹С… РЅРµ Р·Р°С…РѕРґРёС‚ - РїРѕРєР° РЅРµ РїРѕР»СѓС‡РёР»РѕСЃСЊ РїСЂРѕС‚РµСЃС‚РёСЂРѕРІР°С‚СЊ, РІРѕР·РјРѕР¶РЅРѕ, РёРјРµРµС‚ РѕС€РёР±РєРё
+            else // сюда на моих данных не заходит - пока не получилось протестировать, возможно, имеет ошибки
             {
                 if (fr == 0)
                 {
@@ -347,7 +323,7 @@ struct Device {
                     {
                         ex_line->line[0] = tan(pPhi[0]);
                         ex_line->line[1] = 0.0;
-                        ex_line->getProjectionOfPnt(new double[] { pXY_x[to], pXY_y[to] }, new double* [] { pLines_x, pLines_y});
+                        ex_line->getProjectionOfPnt(new double[2] { pXY_x[to], pXY_y[to] }, new double*[2] { pLines_x, pLines_y});
                         pLines_x[1] = 0.0;
                         pLines_y[1] = 0.0;
                         (*pNlines) = 2;
@@ -367,7 +343,7 @@ struct Device {
 
                 else
                 {
-                    prev_line->getProjectionOfPntEx(new double[] { pXY_x[fr - 1], pXY_y[fr - 1] }, new double* [] { pLines_x + (*pNlines), pLines_y + (*pNlines) }, half_dPhi, false);
+                    prev_line->getProjectionOfPntEx(new double[2] { pXY_x[fr - 1], pXY_y[fr - 1] }, new double*[2] { pLines_x + (*pNlines), pLines_y + (*pNlines) }, half_dPhi, false);
                     (*pNlines)++;
 
                     if (to >= *pNpnts)
@@ -378,7 +354,7 @@ struct Device {
 
                         ex_line->line[0] = tan(pPhi[*pNpnts - 1]);
                         ex_line->line[1] = 0.0;
-                        ex_line->getProjectionOfPnt(new double[] { pXY_x[fr - 1], pXY_y[fr - 1] }, new double* [] { pLines_x + (*pNlines), pLines_y + (*pNlines)});
+                        ex_line->getProjectionOfPnt(new double[2] { pXY_x[fr - 1], pXY_y[fr - 1] }, new double*[2] { pLines_x + (*pNlines), pLines_y + (*pNlines)});
                         (*pNlines) += 1;
                     }
 
@@ -386,7 +362,7 @@ struct Device {
                     {
                         ex_line->line[0] = tan(pPhi[fr - 1]);
                         ex_line->line[1] = 0.0;
-                        ex_line->getProjectionOfPnt(new double[] { pXY_x[to], pXY_y[to] }, new double* [] {&pEx_pnt_x, &pEx_pnt_y});//new double* [] { ex_pnt[0], ex_pnt[1]});
+                        ex_line->getProjectionOfPnt(new double[2] { pXY_x[to], pXY_y[to] }, new double*[2] {&pEx_pnt_x, &pEx_pnt_y});//new double*[2] { ex_pnt[0], ex_pnt[1]});
                         
                         if ((sqrt(pow(pEx_pnt_x, 2) + pow(pEx_pnt_y, 2)) > sqrt(pow(pXY_x[fr - 1], 2) + pow(pXY_y[fr - 1], 2))) && (pEx_pnt_x * pXY_x[fr - 1] > 0.0 or pEx_pnt_y * pXY_y[fr - 1] > 0.0))
                         {
@@ -407,7 +383,7 @@ struct Device {
                         {
                             ex_line->line[0] = tan(pPhi[to]);
                             ex_line->line[1] = 0.0;
-                            ex_line->getProjectionOfPnt(new double[] { pXY_x[fr - 1], pXY_y[fr - 1] }, new double* [] { &pEx_pnt_x, &pEx_pnt_y });
+                            ex_line->getProjectionOfPnt(new double[2] { pXY_x[fr - 1], pXY_y[fr - 1] }, new double*[2] { &pEx_pnt_x, &pEx_pnt_y });
 
                             if ((sqrt(pow(pEx_pnt_x, 2) + pow(pEx_pnt_y, 2)) > sqrt(pow(pXY_x[to], 2) + pow(pXY_y[to], 2))) && (pEx_pnt_x * pXY_x[to] > 0.0 or pEx_pnt_y * pXY_y[to] > 0.0))
                             {
@@ -449,8 +425,8 @@ struct Device {
 
 };
 
-//РћСЃРЅРѕРІРЅРѕР№ РіР»РѕР±Р°Р»СЊРЅС‹Р№ РєРѕРЅС‚РµР№РЅРµСЂ СѓСЃС‚СЂРѕР№СЃС‚РІ (СѓРєР°Р·Р°С‚РµР»РµР№ РЅР° РЅРёС…)
-vector<unique_ptr<Device>> devices; //СЃ unique_ptr Р±СѓРґРµС‚ РІС‹РІР·С‹РІР°С‚СЊСЃСЏ РґРµСЃС‚СЂСѓРєС‚РѕСЂ РїРѕ Р·Р°РІРµСЂС€РµРЅРёСЋ РѕС‚РґРµР»СЊРЅРѕРіРѕ СѓСЃС‚СЂРѕР№СЃС‚РІР°
+//Основной глобальный контейнер устройств (указателей на них)
+vector<unique_ptr<Device>> devices; //с unique_ptr будет вывзываться деструктор по завершению отдельного устройства
 
 template<void (Device::* F) ()>
 PyObject* pyFun(PyObject*, PyObject* o) {
@@ -463,13 +439,13 @@ PyObject* pyFun(PyObject*, PyObject* o) {
 
             if (F != nullptr) {
                 unique_lock lk(dev->mxCall);
-                dev->process = false;   //Р±Р»РѕС‡РёРј С„Р»Р°Рі Р·Р°РІРµСЂС€РµРЅРЅС‹С… СЂР°СЃС‡РµС‚РѕРІ
-                dev->foosQueue.push(F);     //РґРѕР±Р°РІР»СЏРµРј С„СѓРЅРєС†РёСЋ РІ РѕС‡РµСЂРµРґСЊ
+                dev->process = false;   //блочим флаг завершенных расчетов
+                dev->foosQueue.push(F);     //добавляем функцию в очередь
                 lk.unlock();
-                dev->cvCall.notify_one();   //СѓРІРµРґРѕРјР»СЏРµРј, РїСЂРѕРІРµСЂРѕС‡РЅР°СЏ С„СѓРЅРєС†РёСЏ РІ wait Р·Р°РїСЂР°С€РёРІР°РµС‚ size() jxthtlb
+                dev->cvCall.notify_one();   //уведомляем, проверочная функция в wait запрашивает foosQueue.size()
             }
             else {
-                unique_lock lk(dev->mxProcess); //СЃРёРЅС…СЂРѕРЅРёР·Р°С†РёСЏ, Р·РґРµСЃСЊ РѕРЅ Р¶РґРµС‚ Р·Р°РІРµСЂС€РµРЅРёСЏ СЂР°СЃС‡РµС‚РѕРІ РїРѕ С„Р»Р°РіСѓ
+                unique_lock lk(dev->mxProcess); //синхронизация, здесь он ждет завершения расчетов по флагу
                 dev->cvProcess.wait(lk, [dev] {return dev->process; });
                 lk.unlock();
             }
@@ -486,9 +462,9 @@ PyObject* pyFun(PyObject*, PyObject* o) {
 
 PyObject* init(PyObject*, PyObject* o) {
 
-    //РџРѕСЃР»Рµ Р·Р°РІРµСЂС€РµРЅРёСЏ СЂР°СЃС‡РµС‚РЅС‹С… С„СѓРЅРєС†РёР№, РЅСѓР¶РЅРѕ Р·Р°РґСѓРјР°С‚СЊСЃСЏ Рё Рѕ quit() Рё РѕР± reinit() - РґР»СЏ РїРѕР»РЅРѕС‚С‹ РєР°СЂС‚РёРЅС‹, С‚СѓС‚ Рё РґРµСЃС‚СЂСѓРєС‚РѕСЂС‹ РїРѕРЅР°РґРѕР±СЏС‚СЃСЏ.
-    //Р—РґРµСЃСЊ - РїСЂРѕРІРµСЂРєРё, РїСЂРѕРІРµСЂРєРё Рё СЃРѕР·РґР°РЅРёРµ РѕР±СЉРµРєС‚Р°, РµСЃР»Рё РІСЃРµ РѕРє
-    //Р’РѕР·РІСЂР°С‰Р°Р°РµС‚ РІ РїРёС‚РѕРЅ id
+    //После завершения расчетных функций, нужно задуматься и о quit() и об reinit() - для полноты картины, тут и деструкторы понадобятся.
+    //Здесь - проверки, проверки и создание объекта, если все ок
+    //Возвращаает в питон id
 
     if (PyTuple_GET_SIZE(o) == 6) {
 

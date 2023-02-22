@@ -224,7 +224,9 @@ class Line():
 def getLines(linesXY : np.ndarray, pntsXY : np.ndarray, pntsPhi : np.ndarray, Npnts : int, deep : float, continuity : float, half_dphi : float, tolerance : float) -> int:
     """#returns the number of the gotten points in lines"""
     t0 = time.time()
-    half_dphi *= 0.0174532925199432957692369
+    #half_dphi *= 0.0174532925199432957692369
+    #print(half_dphi)
+    #half_dphi = 0.00523599
 
     fr = 0
     to = 0
@@ -283,6 +285,7 @@ def getLines(linesXY : np.ndarray, pntsXY : np.ndarray, pntsPhi : np.ndarray, Np
                     else:
                         to += end
 
+            #print("PYTHON", fr, to)
 
         else:
             line = ex_line.copy()
@@ -290,6 +293,7 @@ def getLines(linesXY : np.ndarray, pntsXY : np.ndarray, pntsPhi : np.ndarray, Np
             to = ex_to
             extra = False
 
+        #print("PYTHON", fr, to)
 
         #ИНТЕГРАЦИЯ СЕГМЕНТА
         if (not line.isGap):    #текущая - сплошная
@@ -479,7 +483,8 @@ def drawLoad(xlim=(-4.5, 4.5), ylim=(-0.5, 3.5)):
     
     # рисование ломаной
     ax.plot([0.0, linesXY[0, 0]], [0.0, linesXY[1, 0]], color = 'black', linewidth = linewidth)
-
+    #for i in range(Nlines):
+    #    ax.plot([linesXY[0][i], linesXY[0][i+1]], [linesXY[1][i], linesXY[1][i+1]], linewidth=2)
     v = 0
     while v < Nlines:
         
@@ -500,7 +505,101 @@ def drawLoad(xlim=(-4.5, 4.5), ylim=(-0.5, 3.5)):
         v += 1
     
     fig.canvas.draw_idle()
+    #fig.show()
 
+
+
+#N = 10000000
+#pntsXY = np.ones([3, N])
+#pntsPhi = np.ones([N]) * 1.5
+#linesXY = np.zeros([3, N])
+
+#pntsXY1 = np.ones([3, N])
+#pntsPhi1 = np.ones([N]) * 1.5
+#linesXY1 = np.zeros([3, N])
+
+#pntsXY2 = np.ones([3, N])
+#pntsPhi2 = np.ones([N]) * 1.5
+#linesXY2 = np.zeros([3, N])
+
+#id0 = lidarVector.init(pntsXY, pntsPhi, linesXY, N, (0.0, ))
+#id1 = lidarVector.init(pntsXY1, pntsPhi1, linesXY1, N, (0.0, ))
+#id2 = lidarVector.init(pntsXY2, pntsPhi2, linesXY2, N, (0.0, ))
+
+#t0 = time.time()
+#linesXY[0, :] = np.exp(pntsXY[0, :] * pntsXY[0, :] * pntsPhi)
+#linesXY[1, :] = np.exp(pntsXY[1, :] * pntsXY[1, :] * pntsPhi)
+#print('PY calc time:', time.time() - t0)
+
+#t0 = time.time()
+#lidarVector.pushPnts(id0)   #вызовы push и calc не блокирующие
+#lidarVector.synchronize(id0)    #только вызов sync блокирует до завершения выполнения функций в очереди по объекту со своим id
+#print('CPP Push only id0 time:', time.time() - t0)
+
+#t0 = time.time()
+#lidarVector.calcLines(id0)  #если по данному id не идет работа, вызов не блокирует
+#lidarVector.synchronize(id0)
+#print('CPP Calc id0 time:', time.time() - t0)
+
+#print('lines beg:')
+#print(linesXY[:, :1])
+#print('lines end:')
+#print(linesXY[:, N - 1:])
+
+#print('__NEXT DATA__')
+#pntsXY[:] = 2.0 #обновили данные
+
+#t0 = time.time()
+#linesXY[0, :] = np.exp(pntsXY[0, :] * pntsXY[0, :] * pntsPhi)
+#linesXY[1, :] = np.exp(pntsXY[1, :] * pntsXY[1, :] * pntsPhi)
+#print('PY Calc id0 time:', time.time() - t0)
+
+#t0 = time.time()
+#lidarVector.pushPnts(id0) #если по данному id не идет работа, вызов не блокирует
+#lidarVector.pushPnts(id1)
+#lidarVector.synchronize(id0)
+#print('CPP Push id0 and id1 async (no sync for id1) time:', time.time() - t0) #он ускоряется при следующих вызовах push, видимо, кэширует
+
+#t0 = time.time()
+#lidarVector.calcLines(id0)
+#lidarVector.synchronize(id0)
+#print('CPP Calc id0 time:', time.time() - t0)
+
+#print('lines beg:')
+#print(linesXY[:, :1])
+#print('lines end:')
+#print(linesXY[:, N - 1:])
+
+#print('__NEXT DATA__')
+#pntsXY[:] = 3.0 #обновили данные
+
+#t0 = time.time()
+#lidarVector.pushPnts(id0)
+#lidarVector.calcLines(id0)
+#lidarVector.pushPnts(id1)
+#lidarVector.calcLines(id1)
+#lidarVector.synchronize(id0)
+#lidarVector.synchronize(id1)
+#print('CPP Push and Calc id0, id1 async time:', time.time() - t0)
+
+#t0 = time.time()
+#lidarVector.pushPnts(id0)
+#lidarVector.calcLines(id0)
+#lidarVector.pushPnts(id1)
+#lidarVector.calcLines(id1)
+#lidarVector.pushPnts(id2)
+#lidarVector.calcLines(id2)
+#lidarVector.synchronize(id0)
+#lidarVector.synchronize(id1)
+#lidarVector.synchronize(id2)
+#print('CPP Push and Calc id0, id1, id2 async time:', time.time() - t0)
+
+#print('lines beg:')
+#print(linesXY[:, :1])
+#print('lines end:')
+#print(linesXY[:, N - 1:])
+
+#plt.show()
 
 
 def nextPnts(event):
@@ -527,6 +626,8 @@ def getNlines(device_id):
     print("CPP time", time.time() - t0)
     lns_num = Nlines[0]
 
+    print(linesPhi[:lns_num])
+
     return lns_num
 
 
@@ -546,7 +647,6 @@ def main():
     linesPhi = np.zeros([N])
 
     Nlines = np.zeros([1], dtype=int)
-    Narr = np.array([N])
 
 
     fig = plt.figure()
@@ -560,9 +660,9 @@ def main():
     half_dPhi = 0.3;
     tolerance = 0.1;
 
-    mount = np.zeros([2])
+    mount = (0.0, 0.0)
 
-    id0 = lidarVector.init(pntsXY, pntsPhi, linesXY, Nlines, Narr, (deep, continuity, half_dPhi, tolerance, mount))
+    id0 = lidarVector.init(pntsXY, pntsPhi, linesXY, linesPhi, Nlines, N, (deep, continuity, half_dPhi, tolerance, mount))
     curr_id = id0
 
     lines_num = getNlines(curr_id)
