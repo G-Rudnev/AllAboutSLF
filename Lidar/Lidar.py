@@ -1,4 +1,5 @@
 import sys
+sys.path.append('./')
 import serial
 import time
 import threading
@@ -16,6 +17,8 @@ from RoboMath import*   #always needed
 from Config import*     #always needed
 
 import lidarVector
+
+import StraightLineFilter as SLF
 
 __all__ = ['Lidar']
 
@@ -57,10 +60,10 @@ class Lidar():
             if i > 1:
                 break
             self.mount[i] = float(el)
+        self.mountPhi = float(mainDevicesPars[f"lidarMountPhi_ID{self.lidarID}"])
         self.range = float(mainDevicesPars[f"lidarRange_ID{self.lidarID}"])
         self.half_dphi = float(mainDevicesPars[f"lidarHalf_dPhi_ID{self.lidarID}"])
         """in degrees"""
-        self.mountPhi = float(mainDevicesPars[f"lidarMountPhi_ID{self.lidarID}"])
         self.phiFrom = 180.0 - (float(mainDevicesPars[f"lidarPhiTo_ID{self.lidarID}"]) - self.mountPhi - self.half_dphi)
         """on this lidar counterclockwise is positive and 180.0 deg. shifted angle"""
         self.phiTo = 180.0 - (float(mainDevicesPars[f"lidarPhiFrom_ID{self.lidarID}"]) - self.mountPhi - self.half_dphi)
@@ -91,8 +94,8 @@ class Lidar():
         self.Nlines = 0
 
         #Cpp extension initialization
-        _cppPars = (self.range, float(globalPars["half_track"]) * 2.0 * float(globalPars["safety_scale"]), self.half_dphi, float(mainDevicesPars[f"lidarRegressionTolerance_ID{self.lidarID}"]), self.mount)
-        self.cppID = lidarVector.init(self._xy, self._phi, self._linesXY, self._Nlines, self._Npnts, _cppPars)
+        self._cppPars = (self.range, float(globalPars["half_track"]) * 2.0 * float(globalPars["safety_scale"]), self.half_dphi, float(mainDevicesPars[f"lidarRegressionTolerance_ID{self.lidarID}"]), self.mount)
+        self.cppID = lidarVector.init(self._xy, self._phi, self._linesXY, self._Nlines, self._Npnts, self._cppPars)
 
         if (self.cppID < 0):
             print("Bad inputs for cpp extension", exc = True)  
@@ -236,6 +239,8 @@ class Lidar():
                                 self._Npnts[0] = n
                                 lidarVector.calcLines(self.cppID)
                                 lidarVector.synchronize(self.cppID)
+                                # self._Nlines[0] = SLF.getLines(self._linesXY, self._xy, self._phi, n, \
+                                #             self._cppPars[0], self._cppPars[1], self._cppPars[2], self._cppPars[3], self._cppPars[4])
                                 self._frameID += 1
 
                             n = 0
@@ -291,7 +296,7 @@ class Lidar():
                 return -1
             if self.frameID != self._frameID:
                 self.frameID = self._frameID
-                self.Nlines = self._Nlines[0]
+                self.Nlines = int(self._Nlines[0])
                 self.linesXY[:2, :self.Nlines] = self._linesXY[:2, :self.Nlines]
                 return self.Nlines
         time.sleep(pauseIfOld)

@@ -26,7 +26,7 @@ pntsBuf = []
 Nlines = 0
 linesXY = []
 
-deep = 5.0
+range_ = 5.0
 cont = 0.6
 half_dphi = 0.03
 tol = 0.1
@@ -207,7 +207,7 @@ class Line():
                 pout[0] = (line.line[1] - self.line[1]) / (self.line[0] - line.line[0])
                 pout[1] = self.line[0] * pout[0] + self.line[1]
 
-def getLines(linesXY : np.ndarray, pntsXY : np.ndarray, Npnts : int, mount : np.ndarray, deep : float, continuity : float, half_dphi : float, tolerance : float) -> int:
+def getLines(linesXY : np.ndarray, pntsXY : np.ndarray, pntsPhi : np.ndarray, Npnts : int, range_ : float, continuity : float, half_dphi : float, tolerance : float, mount : np.ndarray) -> int:
     """Mount - это позиция лидара в СК робота.\n
     Returns the number of the gotten points in lines"""
 
@@ -251,14 +251,15 @@ def getLines(linesXY : np.ndarray, pntsXY : np.ndarray, Npnts : int, mount : np.
                 if (to - fr > 2):
                     beg, end = line.set_with_LMS(pntsXY[:, fr : to])
 
-                    if beg != 0:    #если от начала точки убрали, начинается добалвение экстра линии
+                    if beg != 0:    #если от начала точки убрали, начинается добавление экстра линии
                         ex_line = line.copy()   #ex_line в интеграции используется только если текущая - разрыв
                         ex_fr = fr + beg # начало ex_line
                         ex_to = to + end # начало следующей за ex_line 
                         extra = True
                         if beg == 1: #1 точка сначала выпала
                             line.line[0], line.line[1] = pntsXY[1, fr] / pntsXY[0, fr], 0.0
-                            fr = fr - 1
+                            if not prev_line.isGap:
+                                fr = fr - 1
                             to = fr + 1
                         elif beg == 2:   #2 точки
                             line.set_with_2_pnts(pntsXY[:, fr], pntsXY[:, fr + 1])
@@ -315,9 +316,9 @@ def getLines(linesXY : np.ndarray, pntsXY : np.ndarray, Npnts : int, mount : np.
                     linesXY[:2, 1] = 0.0    #здесь разрыв может быть любой длины
                     Nlines = 2
                 else:   #облако пустое
-                    linesXY[0, 0], linesXY[1, 0] = deep * cos(pntsPhi[0]), deep * sin(pntsPhi[0])
+                    linesXY[0, 0], linesXY[1, 0] = range_ * cos(pntsPhi[0]), range_ * sin(pntsPhi[0])
                     linesXY[:2, 1] = 0.0
-                    linesXY[0, 2], linesXY[1, 2] = deep * cos(pntsPhi[Npnts - 1]), deep * sin(pntsPhi[Npnts - 1])
+                    linesXY[0, 2], linesXY[1, 2] = range_ * cos(pntsPhi[Npnts - 1]), range_ * sin(pntsPhi[Npnts - 1])
                     Nlines = 3
                     #####   КОНЕЦ   #####
             else:
@@ -341,7 +342,7 @@ def getLines(linesXY : np.ndarray, pntsXY : np.ndarray, Npnts : int, mount : np.
                     ex_line.line[0], ex_line.line[1] = tan(pntsPhi[fr - 1]), 0.0
                     ex_line.get_projection_of_pnt(pntsXY[:, to], ex_pnt)
                     #отрабатываем разрывы через контроль нормалей к направлениям краевых лучей
-                    if (norm(ex_pnt) > norm([pntsXY[:2, fr - 1]]) and (ex_pnt[0] * pntsXY[0, fr - 1] > 0.0 or ex_pnt[1] * pntsXY[1, fr - 1] > 0.0)): #если ex_pnt дальше вдоль взгляда, чем pntsXY; вторая половина компенсирует нахождние с двух сторон от (0, 0)
+                    if (norm(ex_pnt) > norm([pntsXY[:2, fr - 1]]) and (ex_pnt[0] * pntsXY[0, fr - 1] > 0.0 or ex_pnt[1] * pntsXY[1, fr - 1] > 0.0)): #если ex_pnt дальше вдоль взгляда, чем pntsXY; вторая половина условия компенсирует нахождние с двух сторон от (0, 0)
                         linesXY[:2, Nlines] = 0.001
                         Nlines += 1
                         linesXY[:2, Nlines] = ex_pnt    #так копирует
@@ -439,7 +440,7 @@ def nextPnts(event):
         firstPnt(pntsXY, pntsPhi)
 
         createPnts(pntsXY, pntsPhi, pntsBuf, N, shape = shape, mess = mess)
-        Nlines = getLines(linesXY, pntsXY, pntsPhi, N, deep, cont, half_dphi, tol)
+        Nlines = getLines(linesXY, pntsXY, pntsPhi, N, range_, cont, half_dphi, tol)
 
         drawLoad()
 
@@ -448,14 +449,14 @@ def updatePnts(val):
     with mutex:
         mess = val
         createPnts(pntsXY, pntsPhi, pntsBuf, N, shape = shape, mess = mess)
-        Nlines = getLines(linesXY, pntsXY, pntsPhi, N, deep, cont, half_dphi, tol)
+        Nlines = getLines(linesXY, pntsXY, pntsPhi, N, range_, cont, half_dphi, tol)
         drawLoad()
 
 def updateLinesTolerance(val):
     global Nlines, tol
     with mutex:
         tol = val
-        Nlines = getLines(linesXY, pntsXY, pntsPhi, N, deep, cont, half_dphi, tol)
+        Nlines = getLines(linesXY, pntsXY, pntsPhi, N, range_, cont, half_dphi, tol)
     
     drawLoad(ax.get_xlim(), ax.get_ylim())
 
@@ -466,7 +467,7 @@ def updatePntsShape(event):
         if shape > 1:
             shape = 0
         createPnts(pntsXY, pntsPhi, pntsBuf, N, shape = shape, mess = mess)
-        Nlines = getLines(linesXY, pntsXY, pntsPhi, N, deep, cont, half_dphi, tol)
+        Nlines = getLines(linesXY, pntsXY, pntsPhi, N, range_, cont, half_dphi, tol)
         drawLoad()
 
 jit = False
@@ -485,7 +486,7 @@ def jitter(event):
                 pntsXY[:2, :N] = pntsBuf + 0.02 * random.rand(2, N) - 0.01 + rns
                 pntsPhi[:N] = np.arctan2(pntsXY[1, :N], pntsXY[0, :N])
 
-                Nlines = getLines(linesXY, pntsXY, pntsPhi, N, deep, cont, half_dphi, tol)
+                Nlines = getLines(linesXY, pntsXY, pntsPhi, N, range_, cont, half_dphi, tol)
                 drawLoad(ax.get_xlim(), ax.get_ylim())
             time.sleep(0.1)
 
@@ -511,7 +512,7 @@ def main():
     firstPnt(pntsXY, pntsPhi)
     createPnts(pntsXY, pntsPhi, pntsBuf, N, shape = shape, mess = mess)
 
-    Nlines = getLines(linesXY, pntsXY, pntsPhi, N, deep, cont, half_dphi, tol)
+    Nlines = getLines(linesXY, pntsXY, pntsPhi, N, range_, cont, half_dphi, tol)
     drawLoad()
 
     ax1 = plt.axes([0.15, 0.17, 0.45, 0.03])

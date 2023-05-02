@@ -236,7 +236,8 @@ struct Device {
                             {
                                 line->line[0] = pXY_y[fr] / pXY_x[fr];
                                 line->line[1] = 0.0;
-                                fr--;
+                                if (!prev_line->isGap)
+                                    fr--;
                                 to = fr + 1;
                             }
 
