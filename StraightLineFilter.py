@@ -207,17 +207,18 @@ class Line():
                 pout[0] = (line.line[1] - self.line[1]) / (self.line[0] - line.line[0])
                 pout[1] = self.line[0] * pout[0] + self.line[1]
 
-def getLines(linesXY : np.ndarray, pntsXY : np.ndarray, pntsPhi : np.ndarray, Npnts : int, range_ : float, continuity : float, half_dphi : float, tolerance : float, mount : np.ndarray) -> int:
+def getLines(linesXY : np.ndarray, gapsIdxs : np.ndarray, pntsXY : np.ndarray, pntsPhi : np.ndarray, Npnts : int, half_width : float, half_length : float, safety : float, range_ : float, half_dphi : float, tolerance : float, mount : np.ndarray) -> int:
     """Mount - это позиция лидара в СК робота.\n
     Returns the number of the gotten points in lines"""
 
-    half_dphi *= 0.0174532925199432957692369
+    half_dphi *= 0.01745329252
+    length = 2.0 * half_length
+    continuity = length
 
     fr = 0
     to = 0
     ex_fr = 0
     ex_to = 0
-    Nlines = 0
 
     line = Line()
     prev_line = Line()
@@ -226,6 +227,12 @@ def getLines(linesXY : np.ndarray, pntsXY : np.ndarray, pntsPhi : np.ndarray, Np
     extra = False
 
     ex_pnt = np.zeros([2])
+
+    #начальный ограничивающий сектор
+    linesXY[0, 0], linesXY[1, 0] = -half_length - 0.001, 0.0
+    linesXY[0, 1], linesXY[1, 1] = length * cos(pntsPhi[0]), length * sin(pntsPhi[0])
+    linesXY[:2, 2] = 0.0
+    Nlines = 3
 
     while fr < Npnts:
 
@@ -291,7 +298,7 @@ def getLines(linesXY : np.ndarray, pntsXY : np.ndarray, pntsPhi : np.ndarray, Np
                     Nlines += 1
 
                     if (norm(pntsXY[:2, fr] - pntsXY[:2, fr - 1]) > continuity): #если заданная непрерывность превышена, добавляем неявный разрыв, а если нет, то ломаная просто неразрывно подолжается
-                        linesXY[:2, Nlines] = 0.001
+                        linesXY[:2, Nlines] = 1e-6
                         Nlines += 1
 
                     prev_line.isGap = True
@@ -306,71 +313,84 @@ def getLines(linesXY : np.ndarray, pntsXY : np.ndarray, pntsPhi : np.ndarray, Np
             if (to >= Npnts): #закрываем последнюю
                 line.get_projection_of_pnt_Ex(pntsXY[:, to - 1], linesXY[:, Nlines], half_dphi, False)
                 Nlines += 1
+                linesXY[:2, Nlines] = 0.0 # в конце также теперь обязательный разрыв
+                Nlines += 1               
 
-        else:   #текущая - разрыв
+        elif (fr != 0):   #текущая - разрыв
 
-            if (fr == 0):   #начало с разрыва
-                if (to < Npnts):
-                    ex_line.line[0], ex_line.line[1] = tan(pntsPhi[0]), 0.0
-                    ex_line.get_projection_of_pnt(pntsXY[:, to], linesXY[:, 0])
-                    linesXY[:2, 1] = 0.0    #здесь разрыв может быть любой длины
-                    Nlines = 2
-                else:   #облако пустое
-                    linesXY[0, 0], linesXY[1, 0] = range_ * cos(pntsPhi[0]), range_ * sin(pntsPhi[0])
-                    linesXY[:2, 1] = 0.0
-                    linesXY[0, 2], linesXY[1, 2] = range_ * cos(pntsPhi[Npnts - 1]), range_ * sin(pntsPhi[Npnts - 1])
-                    Nlines = 3
-                    #####   КОНЕЦ   #####
-            else:
-                #не может быть двух подряд разрывов, только в начале, которое уже отработано, поэтому           
-                #всегда сперва закрываем предыдущую
-                prev_line.get_projection_of_pnt_Ex(pntsXY[:, fr - 1], linesXY[:, Nlines], half_dphi, False) 
+            # if (fr == 0):   #начало с разрыва
+                # if (to < Npnts):
+                #     ex_line.line[0], ex_line.line[1] = tan(pntsPhi[0]), 0.0
+                #     ex_line.get_projection_of_pnt(pntsXY[:, to], linesXY[:, 0])
+                #     linesXY[:2, 1] = 0.0    #здесь разрыв может быть любой длины
+                #     Nlines = 2
+                # else:   #облако пустое
+                #     linesXY[0, 0], linesXY[1, 0] = range_ * cos(pntsPhi[0]), range_ * sin(pntsPhi[0])
+                #     linesXY[:2, 1] = 0.0
+                #     linesXY[0, 2], linesXY[1, 2] = range_ * cos(pntsPhi[Npnts - 1]), range_ * sin(pntsPhi[Npnts - 1])
+                #     Nlines = 3
+                #     #####   КОНЕЦ   #####
+            # else:
+            
+            #не может быть двух подряд разрывов, только в начале, которое уже отработано, поэтому           
+            #всегда сперва закрываем предыдущую
+            prev_line.get_projection_of_pnt_Ex(pntsXY[:, fr - 1], linesXY[:, Nlines], half_dphi, False) 
+            Nlines += 1
+
+            if (to >= Npnts):
+                linesXY[:2, Nlines] = 0.0 #здесь разрыв также может быть любой длины
                 Nlines += 1
 
-                if (to >= Npnts):
-                    linesXY[:2, Nlines] = 0.0 #здесь разрыв также может быть любой длины
-                    Nlines += 1
+                # ex_line.line[0], ex_line.line[1] = tan(pntsPhi[Npnts - 1]), 0.0
+                # ex_line.get_projection_of_pnt(pntsXY[:, fr - 1], linesXY[:, Nlines])
+                # Nlines += 1
+                ######  КОНЕЦ  ######
 
-                    ex_line.line[0], ex_line.line[1] = tan(pntsPhi[Npnts - 1]), 0.0
-                    ex_line.get_projection_of_pnt(pntsXY[:, fr - 1], linesXY[:, Nlines])
+            elif (norm(pntsXY[:2, to] - pntsXY[:2, fr - 1]) > continuity): #разрыв достаточно большой и представляет интерес
+                #здесь до и после есть точка, по ним и будем работать
+                    
+                ex_line.line[0], ex_line.line[1] = tan(pntsPhi[fr - 1]), 0.0
+                ex_line.get_projection_of_pnt(pntsXY[:, to], ex_pnt)
+                #отрабатываем разрывы через контроль нормалей к направлениям краевых лучей
+                if (norm(ex_pnt) > norm([pntsXY[:2, fr - 1]]) and (ex_pnt[0] * pntsXY[0, fr - 1] > 0.0 or ex_pnt[1] * pntsXY[1, fr - 1] > 0.0)): #если ex_pnt дальше вдоль взгляда, чем pntsXY; вторая половина условия компенсирует нахождние с двух сторон от (0, 0)
+                    linesXY[:2, Nlines] = 1e-6
                     Nlines += 1
-                    ######  КОНЕЦ   ######
-
-                elif (norm(pntsXY[:2, to] - pntsXY[:2, fr - 1]) > continuity): #разрыв достаточно большой и представляет интерес
-                    #здесь до и после есть точка, по ним и будем работать
-                        
-                    ex_line.line[0], ex_line.line[1] = tan(pntsPhi[fr - 1]), 0.0
-                    ex_line.get_projection_of_pnt(pntsXY[:, to], ex_pnt)
-                    #отрабатываем разрывы через контроль нормалей к направлениям краевых лучей
-                    if (norm(ex_pnt) > norm([pntsXY[:2, fr - 1]]) and (ex_pnt[0] * pntsXY[0, fr - 1] > 0.0 or ex_pnt[1] * pntsXY[1, fr - 1] > 0.0)): #если ex_pnt дальше вдоль взгляда, чем pntsXY; вторая половина условия компенсирует нахождние с двух сторон от (0, 0)
-                        linesXY[:2, Nlines] = 0.001
-                        Nlines += 1
+                    if (norm(pntsXY[:2, to] - ex_pnt) > continuity):
                         linesXY[:2, Nlines] = ex_pnt    #так копирует
                         Nlines += 1
                         linesXY[:2, Nlines] = 0.0   #разрыв до или после неявного разрыва может быть любой длины
                         Nlines += 1                            
-                    else:   #оба перпендикуляра от краев до противоположных лучей не могут быть "за" краями 
-                        ex_line.line[0], ex_line.line[1] = tan(pntsPhi[to]), 0.0
-                        ex_line.get_projection_of_pnt(pntsXY[:, fr - 1], ex_pnt)
-                        if (norm(ex_pnt) > norm([pntsXY[:2, to]]) and (ex_pnt[0] * pntsXY[0, to] > 0.0 or ex_pnt[1] * pntsXY[1, to] > 0.0)):    #аналогично, что и выше
+                else:   #оба перпендикуляра от краев до противоположных лучей не могут быть "за" краями 
+                    ex_line.line[0], ex_line.line[1] = tan(pntsPhi[to]), 0.0
+                    ex_line.get_projection_of_pnt(pntsXY[:, fr - 1], ex_pnt)
+                    if (norm(ex_pnt) > norm([pntsXY[:2, to]]) and (ex_pnt[0] * pntsXY[0, to] > 0.0 or ex_pnt[1] * pntsXY[1, to] > 0.0)):    #аналогично, что и выше
+                        if (norm(ex_pnt - pntsXY[:2, fr - 1]) > continuity): 
                             linesXY[:2, Nlines] = 0.0
                             Nlines += 1  
                             linesXY[:2, Nlines] = ex_pnt    #так копирует
                             Nlines += 1
-                            linesXY[:2, Nlines] = 0.001
-                            Nlines += 1
-                        else:
-                            linesXY[:2, Nlines] = 0.0
-                            Nlines += 1
+                        linesXY[:2, Nlines] = 1e-6
+                        Nlines += 1
+                    else:
+                        linesXY[:2, Nlines] = 0.0
+                        Nlines += 1
 
         prev_line = line.copy()
         fr = to
+
+    #конечный ограничивающий сектор
+    linesXY[0, Nlines], linesXY[1, Nlines] = length * cos(pntsPhi[Npnts - 1]), length * sin(pntsPhi[Npnts - 1])
+    Nlines += 1
     
-    for i in range(Nlines):
-        if (abs(linesXY[0, i]) > 0.001 or abs(linesXY[1, i]) > 0.001):
+    Ngaps = 0
+    for i in range(1, Nlines):  #самая первая точка не смещается
+        if (abs(linesXY[0, i]) > 1e-6 or abs(linesXY[1, i]) > 1e-6):
             linesXY[:2, i] += mount[:2]
-        
-    return Nlines
+        else:
+            gapsIdxs[Ngaps] = i
+            Ngaps += 1
+
+    return Nlines, Ngaps
 
 def firstPnt(pnts : np.ndarray, pntsPhi : np.ndarray) -> None:
     pnts[0, 0] = 50.0 + 0.5 * random.rand() - 0.25
@@ -411,24 +431,22 @@ def drawLoad(xlim = (46, 54), ylim = (46, 54)):
     ax.scatter(pntsXY[0, 0], pntsXY[1, 0], s = 30, marker = 'o', color = 'red')
     ax.scatter(pntsXY[0, 1:], pntsXY[1, 1:], s = 30, marker = 'o', color = 'gray')
 
-    ax.plot([0.0, linesXY[0, 0]], [0.0, linesXY[1, 0]], color = 'black', linewidth = 4.0)
-
     v = 0
     while v < Nlines:
         
         u = v
 
-        while (v < Nlines and (abs(linesXY[0, v]) > 0.01 or abs(linesXY[1, v]) > 0.01)):
+        while (v < Nlines and (abs(linesXY[0, v]) > 1e-5 or abs(linesXY[1, v]) > 1e-5)):
             v += 1
 
         if (v > u + 1):
-            ax.plot(linesXY[0, u : v], linesXY[1, u : v], linewidth = 4.0)
+            ax.plot(linesXY[0, u : v], linesXY[1, u : v], linewidth = 3.0, color = 'red')
 
-        if (v < Nlines): 
+        if (v < Nlines - 1): 
             if (linesXY[0, v] != 0.0 and linesXY[1, v] != 0.0):
-                ax.plot([linesXY[0, v - 1], linesXY[0, v + 1]], [linesXY[1, v - 1], linesXY[1, v + 1]], color = 'black', linewidth = 4.0)
+                ax.plot([linesXY[0, v - 1], linesXY[0, v + 1]], [linesXY[1, v - 1], linesXY[1, v + 1]], color = 'black', linewidth = 3.0)
         else:
-            ax.plot([linesXY[0, v - 1], 0.0], [linesXY[1, v - 1], 0.0], color = 'black', linewidth = 4.0)
+            ax.plot([linesXY[0, Nlines - 1], linesXY[0, 0]], [linesXY[1, Nlines - 1], linesXY[1, 0]], color = 'red', linewidth = 3.0)
 
         v += 1
     

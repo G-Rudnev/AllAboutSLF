@@ -87,15 +87,19 @@ class Lidar():
         self._linesXY = np.zeros([3, self.N])
         self._linesXY[2, :] = 1.0
         self._Nlines = np.zeros([1], dtype = np.uint64)
+        self._gapsIdxs = np.zeros([self.N], dtype = np.uint64)
+        self._Ngaps = np.zeros([1], dtype = np.uint64)
 
         #PUBLIC
-        self.linesXY = np.zeros([3, self.N])
-        self.linesXY[2, :] = 1.0
+        self.linesXY = LinesXY(self.N + 4, closed = True) #4 - is for the base limitting sector
         self.Nlines = 0
 
         #Cpp extension initialization
-        self._cppPars = (self.range, float(globalPars["half_track"]) * 2.0 * float(globalPars["safety_scale"]), self.half_dphi, float(mainDevicesPars[f"lidarRegressionTolerance_ID{self.lidarID}"]), self.mount)
-        self.cppID = lidarVector.init(self._xy, self._phi, self._linesXY, self._Nlines, self._Npnts, self._cppPars)
+        self._cppPars = (   float(globalPars["half_track"]), float(globalPars["half_length"]), float(globalPars["safety_scale"]), \
+                            self.range, self.half_dphi, float(mainDevicesPars[f"lidarRegressionTolerance_ID{self.lidarID}"]), \
+                            self.mount)
+        """(half_width, half_length, safety, range, half_dphi, tolerance, mount"""
+        self.cppID = lidarVector.init(self._xy, self._phi, self._Npnts, self._linesXY, self._Nlines, self._gapsIdxs, self._Ngaps, self._cppPars)
 
         if (self.cppID < 0):
             print("Bad inputs for cpp extension", exc = True)  
@@ -231,16 +235,16 @@ class Lidar():
                             #!!!Нужно помнить, что начало круга из-за коррекции угла может весьма ощутимо плавать - до + нескольких градусов к желаемому PhiFrom
 
                             if (self._xy[0, 0] == 0.0 and self._xy[1, 0] == 0.0):   #лидар отвратительно измеряет углы, если нет дистанции, а нач. и кон. угол очень важны
-                                self._phi[0] = 0.0174532925199432957692369 * (180.0 - (self.phiFrom - self.mountPhi))
+                                self._phi[0] = 0.01745329252 * (180.0 - (self.phiFrom - self.mountPhi))
                             if (self._xy[0, n - 1] == 0.0 and self._xy[1, n - 1] == 0.0):
-                                self._phi[n - 1] = 0.0174532925199432957692369 * (180.0 - (self.phiTo - self.mountPhi)) # + angleOffset
+                                self._phi[n - 1] = 0.01745329252 * (180.0 - (self.phiTo - self.mountPhi)) # + angleOffset
 
                             with self._mutex:
-                                self._Npnts[0] = n
-                                lidarVector.calcLines(self.cppID)
-                                lidarVector.synchronize(self.cppID)
-                                # self._Nlines[0] = SLF.getLines(self._linesXY, self._xy, self._phi, n, \
-                                #             self._cppPars[0], self._cppPars[1], self._cppPars[2], self._cppPars[3], self._cppPars[4])
+                                # self._Npnts[0] = n
+                                # lidarVector.calcLines(self.cppID)
+                                # lidarVector.synchronize(self.cppID)
+                                self._Nlines[0], self._Ngaps[0] = SLF.getLines(self._linesXY, self._gapsIdxs, self._xy, self._phi, n, \
+                                            self._cppPars[0], self._cppPars[1], self._cppPars[2], self._cppPars[3], self._cppPars[4], self._cppPars[5], self._cppPars[6])
                                 self._frameID += 1
 
                             n = 0
@@ -249,7 +253,7 @@ class Lidar():
                     if (self.phiFromPositive and (angles[i] >= self.phiFrom and angles[i] < self.phiTo)) or \
                         (not self.phiFromPositive and (angles[i] >= self.phiFrom or angles[i] < self.phiTo)):
 
-                        self._phi[n] = 0.0174532925199432957692369 * (180.0 - (angles[i] - self.mountPhi)) # + angleOffset
+                        self._phi[n] = 0.01745329252 * (180.0 - (angles[i] - self.mountPhi)) # + angleOffset
 
                         if (dists[i] > 0.1 and dists[i] < self.range):    #it is the limit of lidar itself
                             self._xy[0, n] = dists[i] * cos(self._phi[n])
@@ -296,8 +300,6 @@ class Lidar():
                 return -1
             if self.frameID != self._frameID:
                 self.frameID = self._frameID
-                self.Nlines = int(self._Nlines[0])
-                self.linesXY[:2, :self.Nlines] = self._linesXY[:2, :self.Nlines]
-                return self.Nlines
+                return self.linesXY.Fill(self._linesXY, self._gapsIdxs, int(self._Nlines[0]), int(self._Ngaps[0]))
         time.sleep(pauseIfOld)
         return 0 #the trick is - even if the pointcloud is empty there are 3 elements in linesXY

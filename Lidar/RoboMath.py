@@ -14,6 +14,335 @@ from numpy import matmul as matmul
 from numpy.linalg import norm as norm
 from numpy.linalg import inv as inv
 
+class LinesXY(np.ndarray):
+
+    """
+        Gapped polyline.\n
+        The first and the last pnts should be non-zero both.\n
+        Two gaps should be separated by at least one non-gap pnt
+    """
+
+    def __new__(cls, N, *args, **kwargs):
+        obj = np.zeros([3, N])
+        obj[2, :] = 1.0
+        return obj.view(cls)
+
+    def __init__(self, N : int, closed : bool = False):
+        self.Nlines = N
+        self.closed = closed
+        self.gapsIdxs = np.zeros(N, dtype = np.uint64)
+        self.Ngaps = 0
+
+    def Fill(self, linesXY_ : np.ndarray, gapsIdxs : np.ndarray, Nlines : int, Ngaps : int):
+        self[:2, :Nlines] = linesXY_[:2, :Nlines]
+        self.gapsIdxs[:Ngaps] = gapsIdxs[:Ngaps]
+        self.Nlines = Nlines
+        self.Ngaps = Ngaps
+        return Nlines
+
+    def GetPnt(self, i : int, increment : int = 1, homogen : bool = False):
+        """
+            Returns (shift, [x, y])
+        """
+        shift = 0
+        while True:
+            
+            j = i + shift
+
+            if (j >= self.Nlines or j < 0):
+                if (self.closed):
+                    j %= self.Nlines
+                else:
+                    return (None, shift)
+                
+            pnt = self[:(2 + homogen), j]
+            if (abs(pnt[0]) > 1e-5 or abs(pnt[1]) > 1e-5):
+                return (pnt, shift)
+
+            shift += increment
+
+    def plotLines(self, ax):
+                
+        v = 0
+        while v < self.Nlines:
+            
+            u = v
+
+            while (v < self.Nlines and (abs(self[0, v]) > 1e-5 or abs(self[1, v]) > 1e-5)):
+                v += 1
+
+            if (v > u + 1):
+                ax.plot(self[0, u : v], self[1, u : v], linewidth = 3.0, color = 'red')
+
+            if (v < self.Nlines - 1): 
+                if (self[0, v] != 0.0 and self[1, v] != 0.0):
+                    ax.plot([self[0, v - 1], self[0, v + 1]], [self[1, v - 1], self[1, v + 1]], color = 'black', linewidth = 3.0)
+            elif (self.closed):
+                ax.plot([self[0, self.Nlines - 1], self[0, 0]], [self[1, self.Nlines - 1], self[1, 0]], color = 'red', linewidth = 3.0)
+
+            v += 1
+
+def Closest_pnt_on_lines(pnt : np.ndarray, linesXY : LinesXY, Nlines : int, onGaps : bool = False, exceptGaps : set = set()):
+    """
+        
+    """
+    minDist = inf
+    seg_i = -1
+    closestPnt = np.zeros([2])
+    closestPnt_ = np.zeros([2])
+
+    seg_r = np.zeros([2])
+    v = np.zeros([2])
+    r = np.zeros([2])
+
+    i = 0
+    while i < Nlines:   #linesXY are able to be closed
+        p1, shift = linesXY.GetPnt(i + 1)
+        if (p1 is None):
+            return
+        if (not onGaps):
+            if (shift != 0):
+                i += (shift + 1)
+                continue
+        elif (shift == 0 or (i + 1) in exceptGaps):
+            i += 1
+            continue
+        p0, _ = linesXY.GetPnt(i)
+
+        seg_r[0] = p1[0] - p0[0]
+        seg_r[1] = p1[1] - p0[1]
+
+        v[0] = pnt[0] - p0[0]
+        v[1] = pnt[1] - p0[1]
+
+        val = np.dot(seg_r, seg_r)
+        if (val < 1e-4):
+            t = 0.0
+        else:
+            t = np.dot(v, seg_r) / val
+            if (t < 0.0):
+                t = 0.0
+            elif (t > 1.0):
+                t = 1.0
+
+        closestPnt_[0] = p0[0] + t * seg_r[0]
+        closestPnt_[1] = p0[1] + t * seg_r[1]
+        r[0] = pnt[0] - closestPnt_[0]
+        r[1] = pnt[1] - closestPnt_[1]
+        
+        dist = norm(r)
+        if (dist < minDist - 1e-9):
+            seg_i = i + onGaps
+            closestPnt = closestPnt_.copy()
+            minDist = dist
+
+        i += (shift + 1)
+
+    if (onGaps and not linesXY.closed):
+        for i in (0, Nlines - 1):
+            if (i in exceptGaps):
+                continue
+            closestPnt_, _ = linesXY.GetPnt(i)
+            dist = norm(pnt[:2] - closestPnt_)
+            if (dist < minDist - 1e-9):
+                seg_i = i
+                closestPnt = closestPnt_.copy()
+                minDist = dist
+
+    return (seg_i, closestPnt, minDist)
+
+def Check_segment_intersects_lines(p0 : np.ndarray, p1 : np.ndarray, linesXY : LinesXY, vx_from : int, vx_to : int, checkList : np.ndarray = None, num : int = 0, ignoreGaps : bool = False):
+    """
+        Returns the num of intersections
+    """
+
+    if (checkList is not None):
+        px = np.zeros([2])
+
+    seg_r = np.array([(p1[0] - p0[0]) / 2.0, (p1[1] - p0[1]) / 2.0])
+    seg_c = p0[:2] + seg_r
+    segLen = 2 * norm(seg_r)
+
+    lines_seg_r = np.zeros([2])
+
+    L0 = np.zeros([2]) #axis along segment normal
+    L1 = np.zeros([2]) #axis along lines segment normal
+
+    if (seg_r[0] != 0.0):
+        L0[0] = seg_r[1] / seg_r[0]
+        L0[1] = -1.0
+    else:
+        L0[0] = -1.0
+        L0[1] = 0.0
+
+    T = np.zeros([2])
+
+    while vx_from < vx_to:
+
+        p3, shift = linesXY.GetPnt(vx_from + 1)
+        if (p3 is None):
+            return num
+        elif (ignoreGaps and shift != 0):
+            vx_from += (shift + 1)
+            continue
+        p2, _ = linesXY.GetPnt(vx_from)
+
+        lines_seg_r[0] = (p3[0] - p2[0]) / 2.0
+        lines_seg_r[1] = (p3[1] - p2[1]) / 2.0
+
+        T[0] = p2[0] + lines_seg_r[0] - seg_c[0]
+        T[1] = p2[1] + lines_seg_r[1] - seg_c[1] 
+
+    #L0 along segment normal
+
+        abs_T_L = abs(np.dot(T, L0))
+        abs_lines_seg_r_L = abs(np.dot(lines_seg_r, L0))
+        # abs_seg_r_L = 0.0
+
+        if (abs_T_L > abs_lines_seg_r_L):
+            vx_from += (shift + 1)
+            continue
+
+    #L1 along lines_segment normal
+
+        if (lines_seg_r[0] != 0.0):
+            L1[0] = lines_seg_r[1] / lines_seg_r[0]
+            L1[1] = -1.0
+        else:
+            L1[0] = -1.0
+            L1[1] = 0.0
+
+        abs_T_L = abs(np.dot(T, L1))
+        # abs_lines_seg_r_L = 0.0
+        abs_seg_r_L = abs(np.dot(seg_r, L1))
+
+        if (abs_T_L > abs_seg_r_L):
+            vx_from += (shift + 1)
+            continue
+
+        if (checkList is None):
+            return 1    #are intersect
+
+        k1 = -L0[0] / L0[1] #line 1
+        if (math.isinf(k1)):
+            px[0] = p0[0] #b1
+            px[1] = -L1[0] / L1[1] * (p0[0] - p2[0]) + p2[1] #k2 * b1 + b2, for b2 look double else
+        else:
+            k2 = -L1[0] / L1[1]
+            if (math.isinf(k2)):
+                px_, _ = linesXY(vx_from)
+                px[0] = px_[0]
+                px[1] = k1 * (p2[0] - p0[0]) + p0[1]
+            else:
+                b1 = p0[1] - k1 * p0[0]
+                b2 = p2[1] - k2 * p2[0]
+                px[0] = (b2 - b1) / (k1 - k2)
+                px[1] = k1 * px[0] + b1
+
+        checkList[0, num] = vx_from
+        checkList[1, num] = norm(px - p0[:2]) / segLen
+        checkList[2, num] = (shift != 0)
+    
+        num += 1
+        vx_from += (shift + 1)
+    
+    return num
+
+def Is_obb_intersects_lines(obb_L2G : np.ndarray, obb_half_length, obb_half_width, linesXY : LinesXY, vx_from : int, vx_to : int):
+    """
+        obb - is oriented bounding box, obb_dimension is a vector: {half_length, half_width}.\n
+        Returns the first intersected segment index, or -1 if there is no intersections found.
+        Gaps are ignored
+    """
+
+    #FrontUp radius
+    obb_r1 = np.array([obb_L2G[0, 0] * obb_half_length + obb_L2G[0, 1] * obb_half_width, obb_L2G[1, 0] * obb_half_length + obb_L2G[1, 1] * obb_half_width])
+    #FrontDown radius
+    obb_r2 = np.array([obb_L2G[0, 0] * obb_half_length - obb_L2G[0, 1] * obb_half_width, obb_L2G[1, 0] * obb_half_length - obb_L2G[1, 1] * obb_half_width])
+    #OBB is symmetric, so only 2 radii out of 4
+
+    lines_seg_r = np.zeros([2])
+
+    L0 = np.zeros([2]) #axis normal to segment
+    L1 = np.zeros([2]) #axis along length of obb
+    L2 = np.zeros([2]) #axis along width of obb
+    L1[:] = obb_L2G[:2, 0]
+    L2[:] = obb_L2G[:2, 1]
+
+    T = np.zeros([2])
+
+    while vx_from < vx_to:
+
+        p1, shift = linesXY.GetPnt(vx_from + 1)
+        if (p1 is None):
+            return -1
+        elif (shift != 0):
+            vx_from += (shift + 1)
+            continue
+        p0, _ = linesXY.GetPnt(vx_from)
+
+        lines_seg_r[0] = (p1[0] - p0[0]) / 2.0
+        lines_seg_r[1] = (p1[1] - p0[1]) / 2.0
+
+        T[0] = p0[0] + lines_seg_r[0] - obb_L2G[0, 2] 
+        T[1] = p0[1] + lines_seg_r[1] - obb_L2G[1, 2] 
+
+    #L0 along segment
+
+        if (lines_seg_r[0] != 0.0):
+            L0[0] = lines_seg_r[1] / lines_seg_r[0]
+            L0[1] = -1.0
+        else:
+            L0[0] = -1.0
+            L0[1] = 0
+
+        abs_T_L = abs(np.dot(T, L0))
+        # abs_lines_seg_r_L = 0.0
+        abs_obb_r1_L = abs(np.dot(obb_r1, L0))
+        abs_obb_r2_L = abs(np.dot(obb_r2, L0))
+
+        if (abs_obb_r1_L >= abs_obb_r2_L):
+            if (abs_T_L > abs_obb_r1_L):
+                vx_from += 1
+                continue
+        elif (abs_T_L > abs_obb_r2_L):
+            vx_from += 1
+            continue
+
+    #L1 along length of obb
+
+        abs_T_L = abs(np.dot(T, L1))
+        abs_lines_seg_r_L = abs(np.dot(lines_seg_r, L1))
+        abs_obb_r1_L = abs(np.dot(obb_r1, L1))
+        abs_obb_r2_L = abs(np.dot(obb_r2, L1))
+
+        if (abs_obb_r1_L >= abs_obb_r2_L):
+            if (abs_T_L > (abs_obb_r1_L + abs_lines_seg_r_L)):
+                vx_from += 1
+                continue
+        elif (abs_T_L > (abs_obb_r2_L + abs_lines_seg_r_L)):
+            vx_from += 1
+            continue
+
+    #L2 along width of obb
+
+        abs_T_L = abs(np.dot(T, L2))
+        abs_lines_seg_r_L = abs(np.dot(lines_seg_r, L2))
+        abs_obb_r1_L = abs(np.dot(obb_r1, L2))
+        abs_obb_r2_L = abs(np.dot(obb_r2, L2))
+
+        if (abs_obb_r1_L >= abs_obb_r2_L):
+            if (abs_T_L > (abs_obb_r1_L + abs_lines_seg_r_L)):
+                vx_from += 1
+                continue
+        elif (abs_T_L > (abs_obb_r2_L + abs_lines_seg_r_L)):
+            vx_from += 1
+            continue
+
+        return vx_from    #intersecting with segment vx_from .. vx_from + 1 and maybe others next
+    
+    return -1   #non-intersecting at all
+
 def Transform_mat(dx,dy,dz,Ox,Oy,Oz,order):
     """ transformation matrix around Ox,Oy,Oz (in rad) and shifts dx,dy,dz
     order > 0: Ox, Oy, Oz, shift
@@ -73,165 +402,6 @@ def RotateAroundPnt2D_mat(Oz, pnt):
         [cos(Oz), -sin(Oz), pnt[0] * (1 - cos(Oz)) + pnt[1] * sin(Oz)], \
         [sin(Oz), cos(Oz),  pnt[1] * (1 - cos(Oz)) + pnt[0] * sin(Oz)], \
         [0.0, 0.0, 1.0] ])
-
-def Is_segment_intersects_lines(p0 : np.ndarray, p1 : np.ndarray, linesXY : np.ndarray, Nlines):
-    
-    seg_r = np.array([(p1[0] - p0[0]) / 2.0, (p1[1] - p0[1]) / 2.0])
-    seg_c = p0 + seg_r
-
-    lines_seg_r = np.zeros([2])
-
-    L0 = np.zeros([2]) #axis along segment normal
-    L1 = np.zeros([2]) #axis along lines segment normal
-
-    if (seg_r[0] != 0.0):
-        L0[0] = seg_r[1] / seg_r[0]
-        L0[1] = -1.0
-    else:
-        L0[0] = -1.0
-        L0[1] = 0
-
-    T = np.zeros([2])
-
-    n = 0
-    while n < Nlines - 1:
-
-        if (abs(linesXY[0, n]) < 0.01 and abs(linesXY[1, n]) < 0.01):
-            n += 1
-            continue
-
-        if (abs(linesXY[0, n + 1]) < 0.01 and abs(linesXY[1, n + 1] < 0.01)):
-            n += 2
-            continue
-
-        lines_seg_r[0] = (linesXY[0, n + 1] - linesXY[0, n]) / 2.0
-        lines_seg_r[1] = (linesXY[1, n + 1] - linesXY[1, n]) / 2.0
-
-        T[0] = linesXY[0, n] + lines_seg_r[0] - seg_c[0]
-        T[1] = linesXY[1, n] + lines_seg_r[1] - seg_c[1] 
-
-    #L0 along segment normal
-
-        abs_T_L = abs(np.dot(T, L0))
-        abs_lines_seg_r_L = abs(np.dot(lines_seg_r, L0))
-        # abs_seg_r_L = 0.0
-
-        if (abs_T_L > abs_lines_seg_r_L):
-            n += 1
-            continue
-
-    #L1 along lines_segment normal
-
-        if (lines_seg_r[0] != 0.0):
-            L1[0] = lines_seg_r[1] / lines_seg_r[0]
-            L1[1] = -1.0
-        else:
-            L1[0] = -1.0
-            L1[1] = 0
-
-        abs_T_L = abs(np.dot(T, L1))
-        # abs_lines_seg_r_L = 0.0
-        abs_seg_r_L = abs(np.dot(seg_r, L1))
-
-        if (abs_T_L > abs_seg_r_L):
-            n += 1
-            continue
-
-        return n    #intersecting with segment n .. n + 1 and maybe others
-    
-    return -1   #non-intersecting at all
-
-def Is_obb_intersects_lines(obb_L2G : np.ndarray, obb_half_length, obb_half_width, linesXY : np.ndarray, Nlines):
-    """obb - is oriented bounding box, obb_dimension is a vector: {half_length, half_width}"""
-
-    #FrontUp radius
-    obb_r1 = np.array([obb_L2G[0, 0] * obb_half_length + obb_L2G[0, 1] * obb_half_width, obb_L2G[1, 0] * obb_half_length + obb_L2G[1, 1] * obb_half_width])
-    #FrontDown radius
-    obb_r2 = np.array([obb_L2G[0, 0] * obb_half_length - obb_L2G[0, 1] * obb_half_width, obb_L2G[1, 0] * obb_half_length - obb_L2G[1, 1] * obb_half_width])
-    #OBB is symmetric, so only 2 radii out of 4
-
-    lines_seg_r = np.zeros([2])
-
-    L0 = np.zeros([2]) #axis normal to segment
-    L1 = np.zeros([2]) #axis along length of obb
-    L2 = np.zeros([2]) #axis along width of obb
-    L1[:] = obb_L2G[:2, 0]
-    L2[:] = obb_L2G[:2, 1]
-
-    T = np.zeros([2])
-
-    n = 0
-    while n < Nlines - 1:
-
-        if (abs(linesXY[0, n]) < 0.01 and abs(linesXY[1, n]) < 0.01):
-            n += 1
-            continue
-
-        if (abs(linesXY[0, n + 1]) < 0.01 and abs(linesXY[1, n + 1] < 0.01)):
-            n += 2
-            continue
-
-        lines_seg_r[0] = (linesXY[0, n + 1] - linesXY[0, n]) / 2.0
-        lines_seg_r[1] = (linesXY[1, n + 1] - linesXY[1, n]) / 2.0
-
-        T[0] = linesXY[0, n] + lines_seg_r[0] - obb_L2G[0, 2] 
-        T[1] = linesXY[1, n] + lines_seg_r[1] - obb_L2G[1, 2] 
-
-    #L0 along segment
-
-        if (lines_seg_r[0] != 0.0):
-            L0[0] = lines_seg_r[1] / lines_seg_r[0]
-            L0[1] = -1.0
-        else:
-            L0[0] = -1.0
-            L0[1] = 0
-
-        abs_T_L = abs(np.dot(T, L0))
-        # abs_lines_seg_r_L = 0.0
-        abs_obb_r1_L = abs(np.dot(obb_r1, L0))
-        abs_obb_r2_L = abs(np.dot(obb_r2, L0))
-
-        if (abs_obb_r1_L >= abs_obb_r2_L):
-            if (abs_T_L > abs_obb_r1_L):
-                n += 1
-                continue
-        elif (abs_T_L > abs_obb_r2_L):
-            n += 1
-            continue
-
-    #L1 along length of obb
-
-        abs_T_L = abs(np.dot(T, L1))
-        abs_lines_seg_r_L = abs(np.dot(lines_seg_r, L1))
-        abs_obb_r1_L = abs(np.dot(obb_r1, L1))
-        abs_obb_r2_L = abs(np.dot(obb_r2, L1))
-
-        if (abs_obb_r1_L >= abs_obb_r2_L):
-            if (abs_T_L > (abs_obb_r1_L + abs_lines_seg_r_L)):
-                n += 1
-                continue
-        elif (abs_T_L > (abs_obb_r2_L + abs_lines_seg_r_L)):
-            n += 1
-            continue
-
-    #L2 along width of obb
-
-        abs_T_L = abs(np.dot(T, L2))
-        abs_lines_seg_r_L = abs(np.dot(lines_seg_r, L2))
-        abs_obb_r1_L = abs(np.dot(obb_r1, L2))
-        abs_obb_r2_L = abs(np.dot(obb_r2, L2))
-
-        if (abs_obb_r1_L >= abs_obb_r2_L):
-            if (abs_T_L > (abs_obb_r1_L + abs_lines_seg_r_L)):
-                n += 1
-                continue
-        elif (abs_T_L > (abs_obb_r2_L + abs_lines_seg_r_L)):
-            n += 1
-            continue
-
-        return n    #intersecting with segment n .. n + 1 and maybe others
-    
-    return -1   #non-intersecting at all
 
 def Trilaterate(R, NofAnchors, xyz = np.array([0.0, 0.0, 0.0, 1.0]), dur = 0.01):
     """Simple vector descent method.
