@@ -5,10 +5,13 @@ import time
 import threading
 from Lidar import Lidar
 
+import polylineCpp as pCpp
+
 import math
 from math import fabs as fabs
 from math import pi as pi
 _2pi = 2.0 * pi
+from math import sqrt as sqrt
 from math import sin as sin
 from math import cos as cos
 from math import tan as tan
@@ -21,14 +24,23 @@ from RoboMath import*
 import matplotlib.pyplot as plt
 
 class e:
+
     L2G = None
 
-    safety = float(globalPars["safety_scale"])
-    half_width = float(globalPars["half_track"])
     half_length = float(globalPars["half_length"])
+    half_width = float(globalPars["half_width"])
+    length = 2.0 * half_length
+    width = 2.0 * half_width
+    radius = sqrt(half_length ** 2 + half_width ** 2)
+    safety = 1.0 + float(globalPars["safetyBox"]) / 100.0
+    safety_half_length = half_length * safety
+    safety_half_width = half_width * safety
+    safety_length = length * safety
+    safety_width = width * safety
+    safety_radius = radius * safety
 
     @classmethod
-    def plot(cls, ax):
+    def plot(cls, ax, color_ = 'blue'):
         
         obb_pnts = np.array([
         [cls.L2G[0, 2] + cls.L2G[0, 0] * cls.half_length + cls.L2G[0, 1] * cls.half_width, \
@@ -44,7 +56,7 @@ class e:
                         cls.L2G[1, 2] + cls.L2G[1, 0] * cls.half_length + cls.L2G[1, 1] * cls.half_width] \
         ])
 
-        ax.plot(obb_pnts[0, :], obb_pnts[1, :], color = 'blue', linewidth = 1.0)
+        ax.plot(obb_pnts[0, :], obb_pnts[1, :], color = color_, linewidth = 1.0)
 
 class m:
 
@@ -125,185 +137,192 @@ class Route:
 
         self.ready = False
 
-    def Calculate(self, eL2G : np.ndarray, prev_type, accuracy, latency, r00 = m.r0, iterateBy = None, eG2L : np.ndarray = None):
-        """Calculates current frame to be executed, stores it in self.\n
-        eL2G can be either 2D (3x3) or 3D (4x4) transformation.\n
-        Returns false if and only if we iterate by iterateBy and reach the end or an error.\n
-        Accuracy in parts (0..1) of m.r0, the smaller, the accurate.\n
-        Latency is relative (0..1), the higher, the latencer to go on goal"""
+    def Calculate(self, eL2G : np.ndarray, prev_type, accuracy, latencyDist, iterateBy = None, eG2L : np.ndarray = None, r00 = m.r0):
+            """Calculates current frame to be executed, stores it in self.\n
+            eL2G can be either 2D (3x3) or 3D (4x4) transformation.\n
+            Returns false if and only if we iterate by iterateBy and reach the end or an error.\n
+            accuracy in parts (0..1) of m.r0, the smaller, the accurate.\n
+            latencyDist is the distance to goal of the medium smoothness and have to be > 0.0 (the farther the less smoothnes)"""
 
-        if (eG2L is None):
-            eG2L = inv(eL2G)
+            if (eG2L is None):
+                eG2L = inv(eL2G)
 
-        if (len(eL2G) == 4):
-            rLC = np.array([np.dot(eG2L[0, :], self.L2G[:, 3]), np.dot(eG2L[1, :], self.L2G[:, 3])])
-        else:
-            rLC = np.array([np.dot(eG2L[0, :2], self.L2G[:2, 3]) + eG2L[0, 2], np.dot(eG2L[1, :2], self.L2G[:2, 3]) + eG2L[1, 2]])
-        dist = norm(rLC)
-        alphaDist = atan2(eL2G[0, 0] * self.L2G[1, 0] - eL2G[1, 0] * self.L2G[0, 0], eL2G[0, 0] * self.L2G[0, 0] + eL2G[1, 0] * self.L2G[1, 0])
-
-        #if the goal reached by position and by angle
-        if (iterateBy is not None and dist < 1.05 * r00 and fabs(alphaDist) <= m.alpha0):
-
-            self.type = Route.AS_REQUIRED
-            
-            if (not iterateBy._Iterate(self)):     #the end of the route arc set or an error on route
-                return False
-
-            self.mode = self._mode
-
-            if (fabs(self._alpha) > 0.0001):
-                matmul(self.L2G, Transform_mat(self._s * sin(self._alpha) / self._alpha, self._s * (1.0 - cos(self._alpha)) / self._alpha, 0.0, 0.0, 0.0, self._alpha, 1), self.L2G)
-            else:
-                matmul(self.L2G, Transform_mat(self._s, 0.0, 0.0, 0.0, 0.0, self._alpha, 1), self.L2G)
-
-            attractionVal = atan(rLC[1] / m.r0) / 2.0
-            
             if (len(eL2G) == 4):
                 rLC = np.array([np.dot(eG2L[0, :], self.L2G[:, 3]), np.dot(eG2L[1, :], self.L2G[:, 3])])
             else:
-                rLC = np.array([np.dot(eG2L[0, :2], self.L2G[:2, 3]) + eG2L[0, 2], np.dot(eG2L[1, :2], self.L2G[:, 3]) + eG2L[1, 2]])
+                rLC = np.array([np.dot(eG2L[0, :2], self.L2G[:2, 3]) + eG2L[0, 2], np.dot(eG2L[1, :2], self.L2G[:2, 3]) + eG2L[1, 2]])
             dist = norm(rLC)
             alphaDist = atan2(eL2G[0, 0] * self.L2G[1, 0] - eL2G[1, 0] * self.L2G[0, 0], eL2G[0, 0] * self.L2G[0, 0] + eL2G[1, 0] * self.L2G[1, 0])
 
-            if (fabs(alphaDist - _2pi - self._alpha) < fabs(alphaDist - self._alpha)):
-                alphaDist -= _2pi
-            elif (fabs(alphaDist + _2pi - self._alpha) < fabs(alphaDist - self._alpha)):
-                alphaDist += _2pi
+            #if the goal reached by position and by angle
+            if (iterateBy is not None and dist < 1.05 * r00): # and fabs(alphaDist) <= m.alpha0):
 
-            if (self.direction):
-            
-                if (fabs(alphaDist) > 0.0001):
-                    self.alpha = alphaDist + attractionVal * sin(alphaDist) / alphaDist
-                else:
-                    self.alpha = alphaDist + attractionVal
-
-                self.l = dist
-
-                if (fabs(self.alpha) > 0.0001):
-                    self.s = self.l * fabs(self.alpha / 2.0 / sin(self.alpha / 2.0))
-                else:
-                    self.s = self.l
-
-                if (self.s - self._s > m.r0):
-                    self.s = self._s + m.r0
-                    self.l = self.s * fabs(2.0 * sin(self.alpha / 2.0) / self.alpha)
+                self.type = Route.AS_REQUIRED
                 
-            else:
-                
-                if (fabs(alphaDist) > 0.0001):
-                    self.alpha = alphaDist - attractionVal * sin(alphaDist) / alphaDist
-                else:
-                    self.alpha = alphaDist - attractionVal
-
-                self.l = -dist
-
-                if (fabs(self.alpha) > 0.0001):
-                    self.s = self.l * fabs(self.alpha / 2.0 / sin(self.alpha / 2.0))
-                else:
-                    self.s = self.l
-
-                if (self._s - self.s > m.r0):
-                    self.s = self._s - m.r0
-                    self.l = self.s * fabs(2.0 * sin(self.alpha / 2.0) / self.alpha)
-
-        #if the goal is not reached we have to get to it
-        else:
-
-            if (self.direction):
-                r0 = (r00 + rLC[0]) * accuracy
-            else:
-                r0 = (r00 - rLC[0]) * accuracy
-            
-            if (r0 > r00):
-                r0 = r00
-            elif (r0 <= r00 * accuracy):
-                r0 = r00 * accuracy
-            
-            if (dist < r0):  #WE ARE CLOSE
-                                
-                self.type = Route.TO_GOAL_CLOSE
+                if (not iterateBy.Iterate(self)):     #the end of the route arc set or an error on route
+                    return False
 
                 self.mode = self._mode
-                self.alpha = alphaDist / 2.0
 
-                if ((rLC[0] - dist * cos(self.alpha))**2 + (rLC[1] - dist * sin(self.alpha))**2 <= \
-                    (rLC[0] + dist * cos(self.alpha))**2 + (rLC[1] + dist * sin(self.alpha))**2):
-                    if (self.direction):    #move direction is only as the route defines
-                        self.l = dist
-                    else:
-                        self.l = 0.0
+                if (fabs(self._alpha) > 1e-4):
+                    matmul(self.L2G, Transform_mat(self._s * sin(self._alpha) / self._alpha, self._s * (1.0 - cos(self._alpha)) / self._alpha, 0.0, 0.0, 0.0, self._alpha, 1), self.L2G)
                 else:
-                    if (not self.direction):
-                        self.l = -dist
-                    else:
-                        self.l = 0.0
+                    matmul(self.L2G, Transform_mat(self._s, 0.0, 0.0, 0.0, 0.0, self._alpha, 1), self.L2G)
 
-                if (r0 * r0 < ((rLC[0] - self.l * cos(self.alpha))**2 + (rLC[1] - self.l * sin(self.alpha))**2) ):
-                    self.l /= 2.0
-
-                if (fabs(self.alpha) > 0.0001):
-                    self.s = self.l * self.alpha / sin(self.alpha)
+                attractionVal = atan(rLC[1] / r00) / 2.0
+                
+                if (len(eL2G) == 4):
+                    rLC = np.array([np.dot(eG2L[0, :], self.L2G[:, 3]), np.dot(eG2L[1, :], self.L2G[:, 3])])
                 else:
-                    self.s = self.l      
+                    rLC = np.array([np.dot(eG2L[0, :2], self.L2G[:2, 3]) + eG2L[0, 2], np.dot(eG2L[1, :2], self.L2G[:2, 3]) + eG2L[1, 2]])
+                dist = norm(rLC)
+                alphaDist = atan2(eL2G[0, 0] * self.L2G[1, 0] - eL2G[1, 0] * self.L2G[0, 0], eL2G[0, 0] * self.L2G[0, 0] + eL2G[1, 0] * self.L2G[1, 0])
 
-                self.alpha *= 2.0
-            
-            else:   #WE ARE FAR
-
-                if (prev_type > Route.TO_GOAL_CLOSE):
-                    self.type = prev_type   #to calculate related move
-                else:
-                    self.type = Route.TO_GOAL_FAR_ZERO
-
-                self.mode = m.NORMAL
+                if (fabs(alphaDist - _2pi - self._alpha) < fabs(alphaDist - self._alpha)):
+                    alphaDist -= _2pi
+                elif (fabs(alphaDist + _2pi - self._alpha) < fabs(alphaDist - self._alpha)):
+                    alphaDist += _2pi
 
                 if (self.direction):
-                    self.l = r0
-                else:
-                    rLC[0] = -rLC[0]
-                    rLC[1] = -rLC[1]
-                    self.l = -r0 
-
-                alphaFarEst = atan2(rLC[1], rLC[0])
-                alphaDistAfter = alphaDist - alphaFarEst
-
-                if (self.type == Route.TO_GOAL_FAR_ZERO):
-                    if (alphaDistAfter > 0.9 * pi):
-                        self.type = Route.TO_GOAL_FAR_POSITIVE
-                    elif (alphaDistAfter < -0.9 * pi):
-                        self.type = Route.TO_GOAL_FAR_NEGATIVE
-                elif (fabs(alphaDistAfter) < 0.75 * pi):
-                    self.type = Route.TO_GOAL_FAR_ZERO
                 
-                if (self.type == Route.TO_GOAL_FAR_NEGATIVE and alphaDistAfter > 0.0):
-                    alphaDistAfter -= _2pi
-                elif (self.type == Route.TO_GOAL_FAR_POSITIVE and alphaDistAfter < 0.0):
-                    alphaDistAfter += _2pi
+                    if (fabs(alphaDist) > 1e-4):
+                        self.alpha = alphaDist + attractionVal * sin(alphaDist) / alphaDist
+                    else:
+                        self.alpha = alphaDist + attractionVal
 
-                if (alphaDistAfter > pi):
-                    alphaDistAfter -= _2pi
-                elif (alphaDistAfter < -pi):
-                    alphaDistAfter += _2pi
+                    if (fabs(self.alpha) > 1e-4):
+                        self.s = dist * fabs(self.alpha / 2.0 / sin(self.alpha / 2.0))
+                    else:
+                        self.s = dist
 
-                if (dist <= 2.0 * r00):
-                    self.alpha = atan2(rLC[1] - (2.0 * (fabs(alphaFarEst) < pi / 2.0) - 1.0) * r0 * alphaDistAfter / pi * (1.0 + latency * (dist / r00 / 2.0) ** 2), rLC[0])
+                    if (self.s - self._s > r00):
+                        self.s = self._s + r00
+                    
                 else:
-                    self.alpha = atan2(rLC[1] - (2.0 * (fabs(alphaFarEst) < pi / 2.0) - 1.0) * r0 * alphaDistAfter / pi * (1.0 + latency), rLC[0]) * ((2.0 * r00 / dist) ** latency)
+                    
+                    if (fabs(alphaDist) > 1e-4):
+                        self.alpha = alphaDist - attractionVal * sin(alphaDist) / alphaDist
+                    else:
+                        self.alpha = alphaDist - attractionVal
 
-                if (fabs(self.alpha) > 0.0001):
-                    self.s = self.l * self.alpha / 2.0 / sin(self.alpha / 2.0)
+                    if (fabs(self.alpha) > 1e-4):
+                        self.s = -dist * fabs(self.alpha / 2.0 / sin(self.alpha / 2.0))
+                    else:
+                        self.s = -dist
+
+                    if (self._s - self.s > r00):
+                        self.s = self._s - r00
+
+            #if the goal is not reached we have to get to it
+            else:
+
+                if (self.direction):
+                    r0 = (r00 + rLC[0]) * accuracy
                 else:
-                    self.s = self.l
-        
-        return True
+                    r0 = (r00 - rLC[0]) * accuracy
+                
+                if (r0 > r00):
+                    r0 = r00
+                elif (r0 <= r00 * accuracy):
+                    r0 = r00 * accuracy
+                
+                if (dist < r0):  #WE ARE CLOSE
+                                    
+                    self.type = Route.TO_GOAL_CLOSE
+
+                    self.mode = self._mode
+                    self.alpha = alphaDist / 2.0
+
+                    if ((rLC[0] - dist * cos(self.alpha))**2 + (rLC[1] - dist * sin(self.alpha))**2 <= \
+                        (rLC[0] + dist * cos(self.alpha))**2 + (rLC[1] + dist * sin(self.alpha))**2):
+                        if (self.direction):    #move direction is only as the route defines
+                            l = dist
+                        else:
+                            l = 0.0
+                    else:
+                        if (not self.direction):
+                            l = -dist
+                        else:
+                            l = 0.0
+
+                    if (r0 * r0 < ((rLC[0] - l * cos(self.alpha))**2 + (rLC[1] - l * sin(self.alpha))**2) ):
+                        l /= 2.0
+
+                    if (fabs(self.alpha) > 1e-4):
+                        self.s = l * self.alpha / sin(self.alpha)
+                    else:
+                        self.s = l      
+
+                    self.alpha *= 2.0
+                
+                else:   #WE ARE FAR
+
+                    if (prev_type > Route.TO_GOAL_CLOSE):
+                        self.type = prev_type   #to calculate related move
+                    else:
+                        self.type = Route.TO_GOAL_FAR_ZERO
+
+                    self.mode = m.NORMAL
+
+                    if (self.direction):
+                        l = r0
+                    else:
+                        rLC[0] = -rLC[0]
+                        rLC[1] = -rLC[1]
+                        l = -r0
+
+                    alphaFarEst = atan2(rLC[1], rLC[0])
+                    alphaDistAfter = alphaDist - alphaFarEst
+
+                    if (self.type == Route.TO_GOAL_FAR_ZERO):
+                        if (alphaDistAfter > 0.9 * pi):
+                            self.type = Route.TO_GOAL_FAR_POSITIVE
+                        elif (alphaDistAfter < -0.9 * pi):
+                            self.type = Route.TO_GOAL_FAR_NEGATIVE
+                    elif (fabs(alphaDistAfter) < 0.75 * pi):
+                        self.type = Route.TO_GOAL_FAR_ZERO
+                    
+                    if (self.type == Route.TO_GOAL_FAR_NEGATIVE and alphaDistAfter > 0.0):
+                        alphaDistAfter -= _2pi
+                    elif (self.type == Route.TO_GOAL_FAR_POSITIVE and alphaDistAfter < 0.0):
+                        alphaDistAfter += _2pi
+
+                    if (alphaDistAfter > pi):
+                        alphaDistAfter -= _2pi
+                    elif (alphaDistAfter < -pi):
+                        alphaDistAfter += _2pi
+
+                    latency = latencyDist / (dist + latencyDist)
+
+                    if (dist <= 2.0 * r00):
+                        self.alpha = atan2(rLC[1] - (2.0 * (fabs(alphaFarEst) < pi / 2.0) - 1.0) * r0 * alphaDistAfter / pi * latency * (1.0 + (dist / r00 / 2.0) ** 2), rLC[0])
+                    else:
+                        self.alpha = atan2(rLC[1] - (2.0 * (fabs(alphaFarEst) < pi / 2.0) - 1.0) * r0 * alphaDistAfter / pi * latency * 2.0, rLC[0]) * ((2.0 * r00 / dist) ** latency)
+
+                    if (fabs(self.alpha) > 1e-4):
+                        self.s = l * self.alpha / 2.0 / sin(self.alpha / 2.0)
+                    else:
+                        self.s = l
+
+                # if (self.alpha > 0.0):
+                #     if (self.alpha > pi / 3.0):
+                #         self.s *= pi / 3.0 / self.alpha
+                #         self.alpha = pi / 3.0
+                # else:
+                #     if (self.alpha < pi / -3.0):
+                #         self.s *= pi / -3.0 / self.alpha
+                #         self.alpha = pi / -3.0
+                    
+            return True
 
     def plot(self, ax):
         ax.scatter(self.L2G[0, 3], self.L2G[1, 3], s = 50.0, c = 'green', alpha = 0.25, linewidths = 1.0)
         ax.plot([self.L2G[0, 3], self.L2G[0, 3] + 0.4 * self.L2G[0, 0]], [self.L2G[1, 3], self.L2G[1, 3] + 0.4 * self.L2G[1, 0]], color = 'green', linewidth = 1.0)
 
+e.L2G = np.eye(3)
+
 r = Route(0)
-r.L2G = Transform_mat(3.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1)
+r.L2G = Transform_mat(-1.0, -0.02, 0.0, 0.0, 0.0, pi, 1)
 # r.L2G = Transform2D_mat(6.0 * rand(), 6.0 * rand(), randn() * pi / 2.0, 1)
 
 rA = Route(0)
@@ -312,596 +331,581 @@ def foo(lid, ax, fig):
 
     time.sleep(0.2)
 
-    spacingMin = e.safety * math.sqrt((e.half_length) ** 2 + (e.half_width) ** 2)
-    spacingMean = 1.25 * spacingMin
+    polyline = Polyline(lid.N)
 
-    checkList = np.zeros([3, lid.N // 2])
+    id = pCpp.init(polyline, polyline.checkList, polyline.Nlines, (polyline.Nlines[0], ))
 
-    next = 1
-    t0 = 0.0
+    pnt = np.array([1.0, 1.0])
+
+    ret_tup_0 = (0, )
+    ret_tup_3 = (0, np.zeros([2]), 0.0)
 
     while plt.get_fignums():
 
-        if (next):
+        Nlines = 0
 
-            print(time.time() - t0)
+        while Nlines == 0:
+            Nlines = lid.GetLinesXY(polyline)
 
-            if (next == 2):
-                print("Totally trapped - next rL2G")
-                time.sleep(3.0)
-            elif (next == 3):
-                print("Totally trapped - no way out")
-                time.sleep(3.0)
-            elif (next == 4):
-                print("The goal reached!")
-                time.sleep(2.0)
-
-            next = 0
-
-            Nlines = 0
-
-            while Nlines == 0:
-                Nlines = lid.GetLinesXY()
-
-            print(lid.linesXY.gapsIdxs[:lid.linesXY.Ngaps])
-
+        xlim = ax.get_xlim()
+        ylim = ax.get_ylim()
+        
+        ax.cla()
+        
+        if (norm(r.L2G[:2, 3] - e.L2G[:2, 2]) < m.r0):
             e.L2G = np.eye(3)
 
-            # xlim = ax.get_xlim()
-            # ylim = ax.get_ylim()
+        ax.set(xlim = xlim, ylim = ylim)
+        ax.set_aspect('equal')
 
-            # ax.cla()
+        polyline.plotLines(ax)
+        r.plot(ax)
 
-            # ax.set(xlim = xlim, ylim = ylim)
-            # ax.set_aspect('equal')
+        seg_from = 1
+        seg_to = Nlines - 1
 
-            # lid.linesXY.plotLines(ax)
-            # e.plot(ax)
-            # r.plot(ax)
-            # fig.canvas.draw_idle()
+        pCpp.check_if_obb_intersection(id, e.L2G, e.half_length, e.half_width, 1, Nlines - 1, ret_tup_0)
+        pCpp.synchronize(id)
 
-            trapped = False
-            trappedNonGap = False
-            goInGap = False
-            gappyGoal = None
-            gapsUsed = set()
-
-            goInGapOnce = False
-            trappedNonGapOnce = False
-
-            t0 = time.time()
-
-            xFar_i_reserve = Closest_pnt_on_lines(r.L2G[:2, 3], lid.linesXY, 0, Nlines)[0]
-
-            cumAlpha = 0.0
-
-        if (trapped):
-            e.L2G = np.eye(3)
-
-        basePnt = e.L2G[:2, 2]
-        goalPnt = r.L2G[:2, 3]
-
-        minDist = Closest_pnt_on_lines(basePnt, lid.linesXY, Nlines)[2]
-        xNum = Check_segment_intersects_lines(basePnt, goalPnt, lid.linesXY, 0, Nlines, checkList)
-
-        if (xNum != 0):
-
-            iList_near = checkList[1, :xNum].argmin()
-            xNear_i = int(checkList[0, iList_near])
-            # xNear_t = checkList[1, iList_near]
-
-            iList_far = checkList[1, :xNum].argmax()
-            xFar_i = int(checkList[0, iList_far])
-            xFar_t = checkList[1, iList_far]
-            xFar_isGap = (checkList[2, iList_far] != 0.0)
-
-            numOfxGaps = int(np.sum(checkList[2, :xNum]))
-            if (numOfxGaps == xNum and not goInGapOnce):
-                goInGapCheck = True
-            else:
-                goInGapCheck = ((xNum % 2) == 1)
-
-            pureFreeWay = False
+        num = ret_tup_0[0]
+        print(num)
+        
+        if (num > 0):
+            color = 'red'
         else:
+            color = 'blue'
 
-            xFar_i = xFar_i_reserve
-            xFar_t = 1.0
-            xFar_isGap = False
+        e.plot(ax, color)
 
-            numOfxGaps = 0
-            goInGapCheck = False
-            pureFreeWay = True
+        fig.canvas.draw_idle()
+        
+        r.Calculate(e.L2G, r.type, 0.5, 0.1)
+        if (fabs(r.alpha) > 1e-4):
+            np.matmul(e.L2G, Transform2D_mat(r.s * sin(r.alpha) / r.alpha, r.s * (1.0 - cos(r.alpha)) / r.alpha, r.alpha, 1), e.L2G)
+        else:
+            np.matmul(e.L2G, Transform2D_mat(r.s, 0.0, r.alpha, 1), e.L2G)
+        
+        continue
+
+        GO_ON = 0
+        START = 1
+        REACHED = 2
+        TRAPPED_FREE = 3
+        NOGAPS_NONGAP = 4
+        NOGAPS_GAP = 5
+
+        spacingMin = math.sqrt((e.half_length) ** 2 + (e.half_width) ** 2)
+        spacingMean = e.safety * spacingMin
+
+        edgeGaps = (polyline.gapsIdxs[0], polyline.gapsIdxs[polyline.Ngaps - 1])
+
+        seg_from = polyline.edgeShift
+        seg_to = Nlines - seg_from - 1
+
+        gapsUsed = set()
+
+        trapped = False
+        trappedNonGap = False
+        goInGap = False
+
+        gappyGoal = None
+        cumAlpha = 0.0
+
+        e.L2G = np.eye(3)
+        # r.L2G = ...
+
+        xFar_i_reserve = polyline.Closest_pnt(r.L2G[:2, 3], 0, Nlines)[0]
+
+        next = START
+        noGapsCounter = 0
+
+        while True:
+
+            if (next):
+
+                if (next == REACHED):
+                    print("The goal is reached!")
+                    break
+                elif (next == TRAPPED_FREE):
+                    print("Trapped in freeWay")
+                elif (next > TRAPPED_FREE):
+                    if (next == NOGAPS_NONGAP):
+                        print("No gaps in trappedNonGap")
+                    elif (next == NOGAPS_GAP):
+                        print("No gaps in goInGap")
+                    if (noGapsCounter > 4):
+                        break
+                    elif (noGapsCounter > 2):
+                        print('Multi no gaps')
+                        gapsUsed = set()
+
+                        trapped = False
+                        trappedNonGap = False
+                        goInGap = False
+
+                        gappyGoal = None
+                        cumAlpha = 0.0
+                    noGapsCounter += 1
+
+                gappyGoal = None
+                cumAlpha = 0.0
+
+                next = GO_ON
+
+            basePnt = e.L2G[:2, 2]
+            goalPnt = r.L2G[:2, 3]
+
+            minDist = polyline.Closest_pnt(basePnt, seg_from, seg_to)[2]
+            xNum = polyline.Check_segment_intersections(basePnt, goalPnt, 0, Nlines)
+
+            if (xNum != 0):
+
+                iList_near = polyline.checkList[1, :xNum].argmin()
+                xNear_i = int(polyline.checkList[0, iList_near])
+                # xNear_t = polyline.checkList[1, iList_near]
+
+                iList_far = polyline.checkList[1, :xNum].argmax()
+                xFar_i = int(polyline.checkList[0, iList_far])
+                xFar_t = polyline.checkList[1, iList_far]
+                xFar_isGap = (polyline.checkList[2, iList_far] != 0.0)
+
+                numOfxGaps = int(np.sum(polyline.checkList[2, :xNum]))
+                if (numOfxGaps == xNum):
+                    goInGapCheck = True
+                else:
+                    goInGapCheck = ((xNum % 2) == 1)
+
+                pureFreeWay = False
+
+            else:
+
+                xFar_i = xFar_i_reserve
+                xFar_t = 1.0
+                xFar_isGap = False
+
+                numOfxGaps = 0
+                goInGapCheck = False
+                pureFreeWay = True
 
 
-        if (goInGap):
+            if (goInGap):
+
+                if (trappedNonGap):
+                    if (goInGapCheck):
+                        # gappyGoal = None
+                        # gapsUsed.clear()
+                        trappedNonGap = False
+                elif(not goInGapCheck):
+                    gappyGoal = None
+
+                if (not goInGapCheck):
+                    goInGap = trappedNonGap
+
+            elif (trapped):
+                trappedNonGap = True
+            else:
+                goInGap = goInGapCheck
+
 
             if (trappedNonGap):
-                if (goInGapCheck):
-                    gappyGoal = None
-                    gapsUsed.clear()
-                    trappedNonGap = False
-            elif(not goInGapCheck):
-                gappyGoal = None
-                gapsUsed.clear()
 
-            if (not goInGapCheck):
-                goInGap = trappedNonGap
-                goInGapOnce = True
+                goInGap = True
 
-        elif (trapped):
-            trappedNonGap = True
-            trappedNonGapOnce = True
-        else:
-            goInGap = goInGapCheck
-
-
-        if (trappedNonGap):
-
-            goInGap = True
-
-            if (not trapped and gappyGoal is not None):
-                gap_i = Closest_pnt_on_lines(gappyGoal, lid.linesXY, Nlines, True)[0]
-            else:
-                if (not lid.linesXY.closed and not gapsUsed.issuperset(lid.linesXY.gapsIdxs)):
-                    gapsUsed_ = gapsUsed.copy()
-                    gapsUsed.update({0, Nlines - 1})
-                    gap_i = Closest_pnt_on_lines(basePnt, lid.linesXY, Nlines, True, gapsUsed_)[0]
+                if (not trapped and gappyGoal is not None):
+                    gap_i = polyline.Closest_pnt(gappyGoal, 0, Nlines, True)[0]
                 else:
-                    gap_i = Closest_pnt_on_lines(basePnt, lid.linesXY, Nlines, True, gapsUsed)[0]
-
-            if (gap_i < 0):
-                next = 2
-                continue
-
-        elif (goInGap):
-
-            if (not trapped and gappyGoal is not None):
-
-                gap_i = Closest_pnt_on_lines(gappyGoal, lid.linesXY, Nlines, True)[0]
-            
-            else:
-
-                noWayInc = False
-                noWayDec = False
-
-                while (True):
-
-                    if (xFar_isGap and (xFar_i + 1 not in gapsUsed)):
-                        gap_i = xFar_i + 1
-                        break
-
-                    xFar_pnt = basePnt + xFar_t * (goalPnt - basePnt)
-
-                    if (lid.linesXY.closed and xFar_i == Nlines - 1):
-                        k = 0
+                    if (not gapsUsed.issuperset(polyline.gapsIdxs[1:polyline.Ngaps])):
+                        gapsUsed_ = gapsUsed.copy()
+                        gapsUsed_.update(edgeGaps)
+                        gap_i = polyline.Closest_pnt(basePnt, 0, Nlines, True, gapsUsed_)[0]
                     else:
-                        k = xFar_i + 1
+                        gap_i = polyline.Closest_pnt(basePnt, 0, Nlines, True, gapsUsed)[0]
 
-                    to_break = False
+                if (gap_i < 0):
+                    next = NOGAPS_NONGAP    #нет доступных разрывов в активности trappedNonGap
+                    continue
+
+            elif (goInGap):
+
+                if (not trapped and gappyGoal is not None):
+
+                    gap_i = polyline.Closest_pnt(gappyGoal, 0, Nlines, True)[0]
+                
+                else:
+
+                    noGapInc = False
+                    noGapDec = False
 
                     while (True):
 
-                        if (k > Nlines - 1):
-                            kInc = Nlines - 1
-                            noWayInc = True
+                        if (xFar_isGap and (xFar_i + 1 not in gapsUsed)):
+                            gap_i = xFar_i + 1
                             break
-                        
-                        k += 1
 
-                        pnt, shift = lid.linesXY.GetPnt(k, -1)  #yep, -1
+                        if (xFar_i == Nlines - 1):
+                            k = 0
+                        else:
+                            k = xFar_i + 1
 
-                        if (pnt is None):
-                            kInc = Nlines - 1
-                            pnt = lid.linesXY.GetPnt(Nlines - 1)[0]
-                            to_break = True
-                        elif (shift != 0):
-                            kInc = k
-                            to_break = True
+                        to_break = False
 
-                        if (to_break):
-                            if (kInc in gapsUsed):
-                                to_break = False
-                                continue
-                            distInc = norm(pnt - xFar_pnt)
-                            break
+                        while (True):
+
+                            if (k >= Nlines):
+                                kInc = Nlines - 1
+                                noGapInc = True
+                                break
                             
-                    k = xFar_i
-                    to_break = False
+                            k += 1
 
-                    while (True):
+                            pntInc, shift = polyline.GetPnt(k, -1)  #yep, -1
 
-                        if (k < 0):
-                            kDec = 0
-                            noWayDec = True
+                            if (shift != 0):
+                                kInc = k
+                                to_break = True
+
+                            if (to_break):
+                                if (kInc in gapsUsed):
+                                    to_break = False
+                                    continue
+                                break
+                                
+                        k = xFar_i
+                        to_break = False
+
+                        while (True):
+
+                            if (k < 0):
+                                kDec = 0
+                                noGapDec = True
+                                break
+
+                            k -= 1
+
+                            pntDec, shift = polyline.GetPnt(k, 1)   #yep, 1
+
+                            if (shift != 0):
+                                kDec = k
+                                to_break = True
+
+                            if (to_break):
+                                if (kDec in gapsUsed):
+                                    to_break = False
+                                    continue
+                                break
+
+                        if (noGapInc and noGapDec):
                             break
-
-                        k -= 1
-
-                        pnt, shift = lid.linesXY.GetPnt(k, 1)   #yep, 1
-
-                        if (pnt is None):
-                            kDec = 0
-                            pnt = lid.linesXY.GetPnt(0)[0]
-                            to_break = True
-                        elif (shift != 0):
-                            kDec = k
-                            to_break = True
-
-                        if (to_break):
-                            if (kDec in gapsUsed):
-                                to_break = False
-                                continue
-                            distDec = norm(pnt - xFar_pnt)
-                            break
-                    
-                    if (noWayInc and noWayDec):
-                        break
-                    elif (noWayDec):
-                        gap_i = kInc
-                    elif (noWayInc):
-                        gap_i = kDec
-                    elif ((kDec == 0) == (kInc == Nlines - 1)):
-                        if (distInc <= distDec):
+                        elif noGapDec:
+                            gap_i = kInc
+                        elif noGapInc:
+                            gap_i = kDec
+                        elif ((kDec <= edgeGaps[0]) == (kInc >= edgeGaps[1])):
+                            xFar_pnt = basePnt + xFar_t * (goalPnt - basePnt)
+                            if (norm(pntInc - xFar_pnt) <= norm(pntDec - xFar_pnt)):
+                                gap_i = kInc
+                            else:
+                                gap_i = kDec
+                        elif (kDec <= edgeGaps[0]):
                             gap_i = kInc
                         else:
                             gap_i = kDec
-                    elif (kDec == 0):
-                        gap_i = kInc
-                    else:
-                        gap_i = kDec
 
-                    break
+                        break
 
-                if (noWayInc and noWayDec):
-                    if (trappedNonGapOnce):
-                        next = 2
-                    else:
-                        next = 3
-                    continue
+                    if (noGapInc and noGapDec):
+                        next = NOGAPS_GAP   #нет доступных разрывов в активности goInGap
+                        continue
 
-        freeWay = False
-        invSide = False
-        edge = False
+            freeWay = False
+            invSide = False
 
-        while (goInGap):
+            pnt_L = None
+            pnt_R = None
 
-            to_break = False
-            edge = (gap_i == 0 or gap_i == Nlines - 1)
+            while (goInGap):
 
-            if (not edge and xFar_i == gap_i - 1):
-                if (xNum > 1 and numOfxGaps != xNum):
-                    goInGap = False
-                    break
-                else:
-                    freeWay = True
+                to_break = False
+
+                if (xFar_i == gap_i - 1):
                     to_break = True
+                    if (xNum <= 1 or numOfxGaps == xNum):
+                        freeWay = True
 
-            if (edge):
-                gappyGoal = lid.linesXY.GetPnt(gap_i, homogen = True)[0]
-            else:
-                pnt_L = lid.linesXY.GetPnt(gap_i - 1, homogen = True)[0]
-                pnt_R = lid.linesXY.GetPnt(gap_i + 1, homogen = True)[0]
-                gappyGoal = (pnt_L + pnt_R) / 2.0
+                pnt_L = polyline.GetPnt(gap_i - 1, homogen = True)[0]
+                pnt_R = polyline.GetPnt(gap_i + 1, homogen = True)[0]
 
-            gapsUsed.add(gap_i)
+                gapsUsed.add(gap_i)
 
-            if (to_break):
-                break
+                if (to_break):
+                    break
 
-            if (edge):
+                xNum_ = polyline.Check_segment_intersections(basePnt, pnt_L, 0, gap_i - 2, ignoreGaps = True)
+                xNum_ = polyline.Check_segment_intersections(basePnt, pnt_L, gap_i + 1, Nlines - (gap_i == 1), num = xNum_, ignoreGaps = True)
 
-                xNear_i = xFar_i
-                xFar_i = gap_i
+                xNum_ = polyline.Check_segment_intersections(basePnt, pnt_R, 0, gap_i - 1, num = xNum_, ignoreGaps = True)
+                xNum_ = polyline.Check_segment_intersections(basePnt, pnt_R, gap_i + 2, Nlines, num = xNum_, ignoreGaps = True)
 
-            else:
-
-                xNum_ = Check_segment_intersects_lines(basePnt, pnt_L, lid.linesXY, 0, gap_i - 2, ignoreGaps = True)
-                xNum_ = Check_segment_intersects_lines(basePnt, pnt_L, lid.linesXY, gap_i + 1, Nlines - (gap_i == 1), num = xNum_, ignoreGaps = True)
-
-                xNum_ = Check_segment_intersects_lines(basePnt, pnt_R, lid.linesXY, 0, gap_i - 1, num = xNum_, ignoreGaps = True)
-                xNum_ = Check_segment_intersects_lines(basePnt, pnt_R, lid.linesXY, gap_i + 2, Nlines, num = xNum_, ignoreGaps = True)
-
-                goalPnt = gappyGoal[:2]
+                goalPnt = (pnt_L[:2] + pnt_R[:2]) / 2.0
 
                 if (xNum_ != 0):
 
-                    xNum = Check_segment_intersects_lines(basePnt, goalPnt, lid.linesXY, 0, gap_i - 1, checkList)
-                    xNum = Check_segment_intersects_lines(basePnt, goalPnt, lid.linesXY, gap_i + 1, Nlines, checkList, xNum)
+                    xNum = polyline.Check_segment_intersections(basePnt, goalPnt, 0, gap_i - 1)
+                    xNum = polyline.Check_segment_intersections(basePnt, goalPnt, gap_i + 1, Nlines, xNum)
 
                     if (xNum != 0):
 
-                        iList_near = checkList[1, :xNum].argmin()
-                        xNear_i = int(checkList[0, iList_near])
+                        iList_near = polyline.checkList[1, :xNum].argmin()
+                        xNear_i = int(polyline.checkList[0, iList_near])
                         
                         if (xNum % 2):
                             xFar_i = gap_i - 1
                         else:
-                            iList_far = checkList[1, :xNum].argmax()
-                            xFar_i = int(checkList[0, iList_far])
+                            iList_far = polyline.checkList[1, :xNum].argmax()
+                            xFar_i = int(polyline.checkList[0, iList_far])
 
                 else:
 
                     xNear_i = gap_i
                     invSide = True
 
-            break
+                break
 
 
-        freeWay = (xNum == 0 or freeWay)
+            freeWay = (xNum == 0 or freeWay)
 
-        goalVector = goalPnt - basePnt
-        goalDist = norm(goalVector)
-        goalVector /= goalDist
-        
-        if (freeWay):
-
-            subGoalVector = goalVector
-            subGoalDist = goalDist
+            goalVector = goalPnt - basePnt
+            goalDist = norm(goalVector)
+            goalVector /= goalDist
             
-            alpha = 0.0
-            
-            fwdDist = 2 * e.half_length
-            if (fwdDist > goalDist):
-                fwdDist = goalDist
-            
-            frameVector = r.L2G[:2, 0]
+            if (freeWay):
 
-        else:
-
-            if (xFar_i > xNear_i):
-                N = xFar_i - xNear_i
-            else:
-                N = Nlines - (xNear_i - xFar_i)
-            
-            fullCircle = 0
-
-            #INCREMENT
-            it = xNear_i + 1
-            v = lid.linesXY.GetPnt(it, 1)[0] - basePnt
-
-            alpha = atan2(goalVector[0] * v[1] - goalVector[1] * v[0], goalVector[0] * v[0] + goalVector[1] * v[1])
-            maxAlphaInc = alpha
-            sideInc = 2 * (alpha >= 0.0) - 1
-            distInc = norm(v)
-            itInc = it
-
-            if (invSide):
-                sideInc = -sideInc
-                v_ = lid.linesXY.GetPnt(gap_i - 1, -1)[0] - basePnt
-                limAlpha = fabs(atan2(goalVector[0] * v_[1] - goalVector[1] * v_[0], goalVector[0] * v_[0] + goalVector[1] * v_[1]))
-            else:
-                limAlpha = _2pi
-
-            for _ in range(N - 1):
-
-                it += 1
-                pnt, shift = lid.linesXY.GetPnt(it, 1)
-
-                if (pnt is None):
-                    fullCircle = 1
-                    break
-                elif (shift != 0):
-                    continue
-
-                u = v
-                v = pnt - basePnt
-
-                alpha += atan2(u[0] * v[1] - u[1] * v[0], u[0] * v[0] + u[1] * v[1])
-                shiftL = lid.linesXY.GetPnt(it - 1)[1]
-                shiftR = lid.linesXY.GetPnt(it + 1)[1]
-                if (shiftL == 0 or shiftR == 0):
-                    if (sideInc * alpha >= limAlpha):
-                        fullCircle = 1
-                        break
-                    elif (sideInc * alpha > sideInc * maxAlphaInc):
-                        distInc += norm(pnt - lid.linesXY.GetPnt(itInc)[0])
-                        maxAlphaInc = alpha
-                        itInc = it
-
-            distInc += norm(r.L2G[:2, 3] - lid.linesXY.GetPnt(itInc)[0]);            
-
-            #DECREMENT
-            N = Nlines - N + edge
-            it = xNear_i - invSide
-            v = lid.linesXY.GetPnt(it, -1)[0] - basePnt
-            alpha = atan2(goalVector[0] * v[1] - goalVector[1] * v[0], goalVector[0] * v[0] + goalVector[1] * v[1])
-            maxAlphaDec = alpha
-            sideDec = -sideInc
-            distDec = norm(v)
-            itDec = it
-
-            if (invSide):
-                v_ = lid.linesXY.GetPnt(gap_i + 1, 1)[0] - basePnt
-                limAlpha = fabs(atan2(goalVector[0] * v_[1] - goalVector[1] * v_[0], goalVector[0] * v_[0] + goalVector[1] * v_[1]))
-            else:
-                limAlpha = _2pi
-
-            for _ in range(N - 1):
-
-                it -= 1
-                pnt, shift = lid.linesXY.GetPnt(it, -1)
-
-                if (pnt is None):
-                    fullCircle = -1
-                    break
-                elif (shift != 0):
-                    continue
-
-                u = v
-                v = pnt - basePnt
-
-                alpha += atan2(u[0] * v[1] - u[1] * v[0], u[0] * v[0] + u[1] * v[1])
-                shiftL = lid.linesXY.GetPnt(it - 1)[1]
-                shiftR = lid.linesXY.GetPnt(it + 1)[1]
-                if (shiftL == 0 or shiftR == 0):
-                    if (sideDec * alpha >= limAlpha):
-                        fullCircle = -1
-                        break
-                    elif (sideDec * alpha > sideDec * maxAlphaDec):
-                        distDec += norm(pnt - lid.linesXY.GetPnt(itDec)[0])
-                        maxAlphaDec = alpha
-                        itDec = it
-
-            distDec += norm(r.L2G[:2, 3] - lid.linesXY.GetPnt(itDec, -1)[0])
-
-            #VECTOR DEFINITION
-            if (fullCircle < 0 or (fullCircle == 0 and distInc <= distDec)):
-                alpha = maxAlphaInc
-                side = sideInc
-                it = itInc
-            else:
-                alpha = maxAlphaDec
-                side = sideDec
-                it = itDec
-
-            v = lid.linesXY.GetPnt(it)[0] - basePnt
-            if (side > 0):
-                subGoalVector = v + np.array([-spacingMean * v[1], spacingMean * v[0]]) / norm(v)   # + normal to v
-            else:
-                subGoalVector = v + np.array([spacingMean * v[1], -spacingMean * v[0]]) / norm(v)
-
-            subGoalDist = norm(subGoalVector)
-            subGoalVector /= subGoalDist
-
-            alpha += atan2(v[0] * subGoalVector[1] - v[1] * subGoalVector[0], v[0] * subGoalVector[0] + v[1] * subGoalVector[1])
-
-            fwdDist = 2 * e.half_length
-            # if (fwdDist > subGoalDist):
-            #     fwdDist = subGoalDist
-
-            frameVector = v
-
-
-        if (minDist > spacingMean and pureFreeWay):
-            latency = 1.0 - (subGoalDist / spacingMean / 10.0)
-            if (latency < 0.2):
-                latency = 0.2
-        else:
-            latency = 0.2
-
-        dAlpha = None
-        # dAlpha0 = (2 * invSide - 1) * alpha / 5.0
-        dAlpha0 = alpha / -5.0
-        if (dAlpha0 >= 0.0):
-            if (dAlpha0 < 0.04):
-                dAlpha0 = 0.04
-        else:
-            if (dAlpha0 > -0.04):
-                dAlpha0 = 0.04
-        
-
-        alphaMax = -inf
-        alphaMin = inf
-
-        if (not freeWay):
-            X = Check_segment_intersects_lines(basePnt, basePnt + subGoalDist * subGoalVector, lid.linesXY, 0, Nlines, ignoreGaps = True)
-        else:
-            X = 0
-
-        while (True):
-
-            if (dAlpha is not None):
-                alpha += dAlpha
-
-                trapped = True
-                if (alpha > alphaMax):
-                    alphaMax = alpha
-                    trapped = False
-                if (alpha < alphaMin):
-                    alphaMin = alpha
-                    trapped = False
-                if (trapped or fabs(dAlpha) < 1e-4):
-                    # print('Trapped !!!')
-                    trapped = True
-                    break
-
-                subGoalVector = np.array([subGoalVector[0] * cos(dAlpha) - subGoalVector[1] * sin(dAlpha), \
-                                        subGoalVector[0] * sin(dAlpha) + subGoalVector[1] * cos(dAlpha)])
+                subGoalVector = goalVector
+                subGoalDist = goalDist
                 
-            else:
-                trapped = False
-
-            framePnt = basePnt + fwdDist * subGoalVector
-            # ax.scatter(framePnt[0], framePnt[1], marker = '*')
-            # fig.canvas.draw_idle()
-
-            if (not freeWay):
-                if (Check_segment_intersects_lines(basePnt, framePnt, lid.linesXY, 0, Nlines, ignoreGaps = True)):
-                    dAlpha = alpha / -5.0
-                    continue
-
-            _, frameClosestPnt, frameMinDist = Closest_pnt_on_lines(framePnt, lid.linesXY, Nlines)
-
-            if (frameMinDist < spacingMin):
-                if (X == 0):
-                    baseVector = frameClosestPnt - basePnt
-                    # kDst = 1.0 - minDist / spacingMin
-                    # if (kDst < 0.25):
-                    #     kDst = 0.25
-                    # print(kDst)
-                    dAlpha = 0.33 * atan2(baseVector[0] * subGoalVector[1] - baseVector[1] * subGoalVector[0], baseVector[0] * subGoalVector[0] + baseVector[1] * subGoalVector[1])
+                malpha = 0.0
+                
+                fwdDist = 2.0 * e.half_length
+                if (fwdDist > goalDist):
+                    fwdDist = goalDist
+                
+                if (goInGap):
+                    frameVector = subGoalVector.copy() #можно не копировать
                 else:
-                    dAlpha = dAlpha0
-                continue
+                    frameVector = r.L2G[:2, 0]
 
-            if (dAlpha is not None):
-                frameVector = subGoalVector
-
-            break
-
-        if (trapped):
-            if (not goInGap):
-                if (goInGapOnce or trappedNonGapOnce):
-                    next = 2
-                    continue
-            cumAlpha = 0.0
-            continue
-
-        rA.L2G[:2, 0] = frameVector * (2 * rA.direction - 1)
-        rA.L2G[:2, 3] = framePnt
-
-        rA.Calculate(e.L2G, m.type, 1.0, latency, e.half_length)
-
-        if (minDist < 1.2 * spacingMin):
-            if (fabs(rA.alpha) > pi / 1.5):
-                rA.l = 0.0
             else:
-                rA.l *= (1.0 - 1.5 * fabs(rA.alpha) / pi)
-            
-        cumAlpha += fabs(rA.alpha)
-        if (cumAlpha > 3.0 * _2pi):
-            if (edge):
-                next = 2
-                continue
-            else:
-                trapped = True
-                if (not goInGap):
-                    if (goInGapOnce or trappedNonGapOnce):
-                        next = 2
+
+                if (xFar_i > xNear_i):
+                    NInc = xFar_i - xNear_i
+                    NDec = Nlines - NInc
+                else:
+                    NDec = xNear_i - xFar_i
+                    NInc = Nlines - NDec
+
+                if (NInc <= NDec):
+                    inc = 1
+                    N = NInc
+                else:
+                    inc = -1
+                    N = NDec
+
+                if (inc > 0):
+                    idxCur = xNear_i + 1
+                else:
+                    idxCur = xNear_i - invSide
+
+                v = polyline.GetPnt(idxCur, inc)[0] - basePnt
+
+                malpha = alphaCur = atan2(goalVector[0] * v[1] - goalVector[1] * v[0], goalVector[0] * v[0] + goalVector[1] * v[1])
+                if (alphaCur >= 0.0):
+                    side = 1
+                else:
+                    side = -1
+                idx = idxCur
+
+                if (invSide):
+                    side = -side
+                    v_ = polyline.GetPnt(gap_i - inc, -inc)[0] - basePnt
+                    limAlpha = fabs(atan2(goalVector[0] * v_[1] - goalVector[1] * v_[0], goalVector[0] * v_[0] + goalVector[1] * v_[1]))
+                else:
+                    limAlpha = _2pi
+
+                for _ in range(N - 1):
+
+                    idxCur += inc
+                    pnt, shift = polyline.GetPnt(idxCur, inc)
+
+                    if (shift != 0):
                         continue
-                cumAlpha = 0.0
+
+                    u = v
+                    v = pnt - basePnt
+
+                    alphaCur += atan2(u[0] * v[1] - u[1] * v[0], u[0] * v[0] + u[1] * v[1])
+                    shiftL = polyline.GetPnt(idxCur - 1)[1]
+                    shiftR = polyline.GetPnt(idxCur + 1)[1]
+                    if (shiftL == 0 or shiftR == 0):
+                        if (side * alphaCur >= limAlpha):
+                            break
+                        elif (side * alphaCur > side * malpha):
+                            malpha = alphaCur
+                            idx = idxCur
+
+
+                v = polyline.GetPnt(idx)[0] - basePnt
+                if (side > 0):
+                    subGoalVector = v + np.array([-spacingMean * v[1], spacingMean * v[0]]) / norm(v)   # + normal to v
+                else:
+                    subGoalVector = v + np.array([spacingMean * v[1], -spacingMean * v[0]]) / norm(v)
+
+                subGoalDist = norm(subGoalVector)
+                subGoalVector /= subGoalDist
+
+                malpha += atan2(v[0] * subGoalVector[1] - v[1] * subGoalVector[0], v[0] * subGoalVector[0] + v[1] * subGoalVector[1])
+
+                fwdDist = 2.0 * e.half_length
+                if (fwdDist > subGoalDist):
+                    fwdDist = subGoalDist
+
+                frameVector = v.copy()
+
+
+            dAlpha = None
+
+            if (freeWay):
+                xNum = 0
+            else:
+                xNum = polyline.Check_segment_intersections(basePnt, basePnt + subGoalDist * subGoalVector, 0, Nlines)
+
+            if (xNum != 0):
+                xNear_t = polyline.checkList[1, :xNum].min()
+                xNearDist = xNear_t * subGoalDist
+            else:
+                xNearDist = inf
+
+            alphaMax = -inf
+            alphaMin = inf
+
+            fwdDist = minDist
+            if (fwdDist < e.length):
+                fwdDist = e.length
+
+            while (True):
+
+                if (dAlpha is not None):
+
+                    if (dAlpha > 0.0):
+                        if (dAlpha < 0.1):
+                            dAlpha = 0.1
+                    elif (dAlpha > -0.1):
+                        dAlpha = -0.1
+
+                    malpha += dAlpha
+
+                    trapped = True
+                    if (malpha > alphaMax):
+                        alphaMax = malpha
+                        trapped = False
+                    if (malpha < alphaMin):
+                        alphaMin = malpha
+                        trapped = False
+
+                    if (trapped):
+                        print("Trapped !!!")
+                        break
+
+                    subGoalVector = np.array([subGoalVector[0] * cos(dAlpha) - subGoalVector[1] * sin(dAlpha), \
+                                            subGoalVector[0] * sin(dAlpha) + subGoalVector[1] * cos(dAlpha)])
+                    
+                else:
+                    trapped = False
+
+                framePnt = basePnt + fwdDist * subGoalVector
+                # ax.scatter(framePnt[0], framePnt[1], marker = '*')
+                # fig.canvas.draw_idle()
+
+                if (not freeWay):
+                    if (polyline.Check_segment_intersections(basePnt, framePnt, 0, Nlines, ignoreGaps = True)):
+                        dAlpha = malpha / -4.0
+                        continue
+
+                _, frameClosestPnt, frameMinDist = polyline.Closest(framePnt, 0, Nlines)
+
+                if (frameMinDist < spacingMin):
+                    if (xNearDist > spacingMean):
+                        baseVector = frameClosestPnt - basePnt
+                        # kDst = 1.0 - minDist / spacingMin
+                        # if (kDst < 0.25):
+                        #     kDst = 0.25
+                        # print(kDst)
+                        if (invSide):
+                            dAlpha = 0.33 * atan2(baseVector[0] * goalVector[1] - baseVector[1] * goalVector[0], baseVector[0] * goalVector[0] + baseVector[1] * goalVector[1])
+                        else:
+                            dAlpha = 0.33 * atan2(baseVector[0] * subGoalVector[1] - baseVector[1] * subGoalVector[0], baseVector[0] * subGoalVector[0] + baseVector[1] * subGoalVector[1])
+                    else:
+                        dAlpha = malpha / -4.0
+                    continue
+
+                if (dAlpha is not None):
+                    frameVector = subGoalVector
+
+                break
+
+            if (trapped):
+                if (not goInGap):
+                    next = TRAPPED_FREE    #заблокирован на свободной видимости
                 continue
 
-        if (fabs(rA.alpha) > 0.0001):
-            m.LT = Transform2D_mat(rA.l * cos(rA.alpha / 2.0), rA.l * sin(rA.alpha / 2.0), rA.alpha, 1)
-        else:
-            m.LT = Transform2D_mat(rA.l, 0.0, rA.alpha, 1)
+            rA.L2G[:2, 0] = frameVector * (2 * rA.direction - 1)
+            rA.L2G[:2, 3] = framePnt
 
-        matmul(e.L2G, m.LT, e.L2G)
+            if (minDist > 2.0 * spacingMin and pureFreeWay):
+                latency = 1.0 - (subGoalDist / spacingMean / 10.0)
+                if (latency < 0.2):
+                    latency = 0.2
+            else:
+                latency = 0.1
 
-        if (norm(e.L2G[:2, 2] - r.L2G[:2, 3]) < spacingMean):
-            next = 4
+            rA.Calculate(e.L2G, m.type, 0.75, latency, e.half_length)
 
-        # e.plot(ax)
-        # fig.canvas.draw_idle()
+            if (minDist < 1.25 * spacingMin):
+                if (fabs(rA.alpha) > pi / 1.5):
+                    rA.l = 0.0
+                else:
+                    rA.l *= (1.0 - 1.5 * fabs(rA.alpha) / pi)
+                
+            cumAlpha += fabs(rA.alpha)
+            if (cumAlpha > 3.0 * _2pi):
+                trapped = True  #просто ищем следующий разрыв
+                next = TRAPPED_FREE
+                continue
 
-        # time.sleep(0.01)
+            if (goInGap):
+                gappyGoal = (pnt_L + pnt_R) / 2.0
+
+            m.type = rA.type
+
+            if (fabs(rA.alpha) > 0.0001):
+                m.LT = Transform2D_mat(rA.l * cos(rA.alpha / 2.0), rA.l * sin(rA.alpha / 2.0), rA.alpha, 1)
+            else:
+                m.LT = Transform2D_mat(rA.l, 0.0, rA.alpha, 1)
+
+            matmul(e.L2G, m.LT, e.L2G)
+
+            if (norm(e.L2G[:2, 2] - r.L2G[:2, 3]) < e.safety_length):
+                next = REACHED    #цель достигнута
+
+            e.plot(ax)
+            fig.canvas.draw_idle()
+
+            time.sleep(0.1)
 
 def main():
 
     fig = plt.figure()
     ax = plt.axes()
-    ax.set(xlim = (-1, 5), ylim = (-5, 5))
+    ax.set(xlim = (-2, 2), ylim = (-2, 2))
     ax.set_aspect('equal')
 
     lid0 = Lidar.Create(0)

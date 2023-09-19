@@ -98,7 +98,7 @@ class Line():
         return line
 
     def set_as_tangent_with_1_pnt(self, p : np.ndarray):
-        if p[1] != 0.0:
+        if abs(p[1]) > 1e-6:
             self.line[0] = -p[0] / p[1]
             self.line[1] = (p[0] * p[0] + p[1] * p[1]) / p[1]
         else:
@@ -108,7 +108,7 @@ class Line():
 
     def set_with_2_pnts(self, p1 : np.ndarray, p2 : np.ndarray):
         dx = p2[0] - p1[0]
-        if dx != 0.0:
+        if abs(dx) > 1e-6:
             self.line[0] = (p2[1] - p1[1]) / dx
             self.line[1] = p1[1] - self.line[0] * p1[0]
         else:
@@ -213,7 +213,17 @@ def getLines(linesXY : np.ndarray, gapsIdxs : np.ndarray, pntsXY : np.ndarray, p
 
     half_dphi *= 0.01745329252
     length = 2.0 * half_length
-    continuity = length
+    continuity = length * safety
+
+    if (pntsPhi[0] > 0.0):
+        phiFirst = pntsPhi[0] + 2.0 * half_dphi
+    else:
+        phiFirst = pntsPhi[0] - 2.0 * half_dphi
+
+    if (pntsPhi[Npnts - 1] > 0.0):
+        phiLast = pntsPhi[Npnts - 1] + 2.0 * half_dphi
+    else:
+        phiLast = pntsPhi[Npnts - 1] - 2.0 * half_dphi
 
     fr = 0
     to = 0
@@ -230,7 +240,7 @@ def getLines(linesXY : np.ndarray, gapsIdxs : np.ndarray, pntsXY : np.ndarray, p
 
     #начальный ограничивающий сектор
     linesXY[0, 0], linesXY[1, 0] = -half_length - 0.001, 0.0
-    linesXY[0, 1], linesXY[1, 1] = length * cos(pntsPhi[0]), length * sin(pntsPhi[0])
+    linesXY[0, 1], linesXY[1, 1] = safety * length * cos(phiFirst), safety * length * sin(phiFirst)
     linesXY[:2, 2] = 0.0
     Nlines = 3
 
@@ -264,7 +274,10 @@ def getLines(linesXY : np.ndarray, gapsIdxs : np.ndarray, pntsXY : np.ndarray, p
                         ex_to = to + end # начало следующей за ex_line 
                         extra = True
                         if beg == 1: #1 точка сначала выпала
-                            line.line[0], line.line[1] = pntsXY[1, fr] / pntsXY[0, fr], 0.0
+                            if (abs(pntsXY[0, fr]) > 1e-6):
+                                line.line[0], line.line[1] = pntsXY[1, fr] / pntsXY[0, fr], 0.0
+                            else:
+                                line.line[0], line.line[1] = inf, 0.0
                             if not prev_line.isGap:
                                 fr = fr - 1
                             to = fr + 1
@@ -313,6 +326,8 @@ def getLines(linesXY : np.ndarray, gapsIdxs : np.ndarray, pntsXY : np.ndarray, p
             if (to >= Npnts): #закрываем последнюю
                 line.get_projection_of_pnt_Ex(pntsXY[:, to - 1], linesXY[:, Nlines], half_dphi, False)
                 Nlines += 1
+                linesXY[0, Nlines], linesXY[1, Nlines] = (length + continuity) * cos(pntsPhi[Npnts - 1]), (length + continuity) * sin(pntsPhi[Npnts - 1])
+                Nlines += 1
                 linesXY[:2, Nlines] = 0.0 # в конце также теперь обязательный разрыв
                 Nlines += 1               
 
@@ -338,6 +353,8 @@ def getLines(linesXY : np.ndarray, gapsIdxs : np.ndarray, pntsXY : np.ndarray, p
             Nlines += 1
 
             if (to >= Npnts):
+                linesXY[0, Nlines], linesXY[1, Nlines] = (length + continuity) * cos(pntsPhi[Npnts - 1]), (length + continuity) * sin(pntsPhi[Npnts - 1])
+                Nlines += 1
                 linesXY[:2, Nlines] = 0.0 #здесь разрыв также может быть любой длины
                 Nlines += 1
 
@@ -379,7 +396,7 @@ def getLines(linesXY : np.ndarray, gapsIdxs : np.ndarray, pntsXY : np.ndarray, p
         fr = to
 
     #конечный ограничивающий сектор
-    linesXY[0, Nlines], linesXY[1, Nlines] = length * cos(pntsPhi[Npnts - 1]), length * sin(pntsPhi[Npnts - 1])
+    linesXY[0, Nlines], linesXY[1, Nlines] = safety * length * cos(phiLast), safety * length * sin(phiLast)
     Nlines += 1
     
     Ngaps = 0

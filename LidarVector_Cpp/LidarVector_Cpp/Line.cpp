@@ -1,4 +1,4 @@
-#include "Line.h"
+#include "line.h"
 
 #include <iostream>
 //#include <limits>
@@ -9,16 +9,16 @@
 
 using namespace std;
 
-Line::Line(double qOk):
-	line(new double[2] {0.0, 0.0}),
+Line::Line(double qOk) :
+	line(new double[2]{ 0.0, 0.0 }),
 	isGap(true),
 	isSingle(true),
 	qOk(qOk),
 	_q(qOk),
-	_sums(new double[5] {0.0, 0.0, 0.0, 0.0, 0.0}) 
+	_sums(new double[5]{ 0.0, 0.0, 0.0, 0.0, 0.0 })
 {}
 
-double* Line::LMS(vector<double> X, vector<double> Y, size_t fr, size_t to, double* sums) 
+double* Line::LMS(vector<double> X, vector<double> Y, long fr, long to, double* sums)
 {
 	/*
 	sums0 = sum(X)
@@ -28,28 +28,28 @@ double* Line::LMS(vector<double> X, vector<double> Y, size_t fr, size_t to, doub
 	sums4 = sums(X * Y)
 	*/
 
-	size_t N = to - fr;
+	long N = to - fr;
 	double phi = sums[4] - (sums[0] * sums[1]) / N;
 
 	double distsSum1 = 0.0;
 	double distsSum2 = 0.0;
 	double A1, A2, C1, C2;
 
-	if (abs(phi) > 0.000001) 
+	if (abs(phi) > 1e-6)
 	{
-		double theta = (sums[3] - sums[2]) / phi + (pow(sums[0], 2.0) - pow(sums[1], 2.0)) / (phi * N);
-		double D = pow(theta, 2.0) + 4.0;
-		
+		double theta = (sums[3] - sums[2]) / phi + (sums[0] * sums[0] - sums[1] * sums[1]) / (phi * N);
+		double D = theta * theta + 4.0;
+
 		A1 = (theta + sqrt(D)) / 2.0;
 		A2 = (theta - sqrt(D)) / 2.0;
-		
+
 		C1 = (sums[1] - sums[0] * A1) / N;
 		C2 = (sums[1] - sums[0] * A2) / N;
 
-		for (size_t i = fr; i < to; i++) 
+		for (long i = fr; i < to; i++)
 		{
-			distsSum1 += abs(X[i] * A1 - Y[i] + C1) / sqrt(pow(A1, 2.0) + 1.0);
-			distsSum2 += abs(X[i] * A2 - Y[i] + C2) / sqrt(pow(A2, 2.0) + 1.0);
+			distsSum1 += abs(X[i] * A1 - Y[i] + C1) / sqrt(A1 * A1 + 1.0);
+			distsSum2 += abs(X[i] * A2 - Y[i] + C2) / sqrt(A2 * A2 + 1.0);
 		}
 
 	}
@@ -58,11 +58,11 @@ double* Line::LMS(vector<double> X, vector<double> Y, size_t fr, size_t to, doub
 	{
 		A1 = INFINITY;
 		A2 = 0.0;
-		
+
 		C1 = sums[0] / N;
 		C2 = sums[1] / N;
 
-		for (size_t i = fr; i < to; i++)
+		for (long i = fr; i < to; i++)
 		{
 			distsSum1 += abs(X[i] - C1);
 			distsSum2 += abs(X[i] - C2);
@@ -70,15 +70,15 @@ double* Line::LMS(vector<double> X, vector<double> Y, size_t fr, size_t to, doub
 	}
 
 	if (distsSum1 < distsSum2)
-		return new double[3] { A1, C1, distsSum1 / N };
+		return new double[3]{ A1, C1, distsSum1 / N };
 	else
-		return new double[3] { A2, C2, distsSum2 / N };
+		return new double[3]{ A2, C2, distsSum2 / N };
 }
 
-Line* Line::copy() 
+Line* Line::copy()
 {
 	Line* cp_line = new Line();
-	for (int i = 0; i < 2; i++) 
+	for (long i = 0; i < 2; i++)
 		cp_line->line[i] = this->line[i];
 
 	cp_line->line[0] = this->line[0];
@@ -87,24 +87,24 @@ Line* Line::copy()
 	cp_line->isSingle = this->isSingle;
 	cp_line->qOk = this->qOk;
 	cp_line->_q = this->_q;
-	
-	/*for (int i = 0; i < 5; i++) 
+
+	/*for (long i = 0; i < 5; i++)
 		cp_line->_sums[i] = this->_sums[i];*/
 
 	return cp_line;
 }
 
-void Line::setAsTangentWithOnePnt(double* p) 
+void Line::setAsTangentWithOnePnt(double* p)
 {
 	// p[0] = x, p[1] = y
 
-	if (p[1] != 0.0) 
+	if (abs(p[1]) > 1e-6)
 	{
 		this->line[0] = -p[0] / p[1];
 		this->line[1] = (p[0] * p[0] + p[1] * p[1]) / p[1];
 	}
 
-	else 
+	else
 	{
 		this->line[0] = INFINITY;
 		this->line[1] = p[0];
@@ -112,16 +112,16 @@ void Line::setAsTangentWithOnePnt(double* p)
 	this->isSingle = true;
 }
 
-void Line::setWithTwoPnts(double* p1, double* p2) 
+void Line::setWithTwoPnts(double* p1, double* p2)
 {
 	double dx = p2[0] - p1[0];
-	if (dx != 0.0) 
+	if (abs(dx) > 1e-6)
 	{
 		this->line[0] = (p2[1] - p1[1]) / dx;
 		this->line[1] = p1[1] - this->line[0] * p1[0];
-	} 
-	
-	else 
+	}
+
+	else
 	{
 		this->line[0] = INFINITY;
 		this->line[1] = p1[0]; // без минуса удобнее
@@ -129,11 +129,11 @@ void Line::setWithTwoPnts(double* p1, double* p2)
 	this->isSingle = false;
 }
 
-long* Line::setWithLMS(vector<double>* pnts, bool best) 
+long* Line::setWithLMS(vector<double>* pnts, bool best)
 {
 	vector<double> X = pnts[0];
 	vector<double> Y = pnts[1];
-	size_t segN = X.size();
+	long segN = (long)X.size();
 
 	// sums calculation
 	this->_sums[0] = accumulate(begin(X), end(X), 0.0);
@@ -153,8 +153,8 @@ long* Line::setWithLMS(vector<double>* pnts, bool best)
 
 	if (best)
 	{
-		size_t beg = 0;
-		size_t end = segN;
+		long beg = 0;
+		long end = segN;
 
 		double A, C, q;
 
@@ -166,8 +166,8 @@ long* Line::setWithLMS(vector<double>* pnts, bool best)
 				end--;
 				this->_sums[0] -= X[end];
 				this->_sums[1] -= Y[end];
-				this->_sums[2] -= pow(X[end], 2.0);
-				this->_sums[3] -= pow(Y[end], 2.0);
+				this->_sums[2] -= X[end] * X[end];
+				this->_sums[3] -= Y[end] * Y[end];
 				this->_sums[4] -= X[end] * Y[end];
 			}
 
@@ -175,8 +175,8 @@ long* Line::setWithLMS(vector<double>* pnts, bool best)
 			{
 				this->_sums[0] -= X[beg];
 				this->_sums[1] -= Y[beg];
-				this->_sums[2] -= pow(X[beg], 2.0);
-				this->_sums[3] -= pow(Y[beg], 2.0);
+				this->_sums[2] -= X[beg] * X[beg];
+				this->_sums[3] -= Y[beg] * Y[beg];
 				this->_sums[4] -= X[beg] * Y[beg];
 				beg++;
 			}
@@ -210,37 +210,37 @@ long* Line::setWithLMS(vector<double>* pnts, bool best)
 
 		}
 
-		return new long[2] { (long) beg, (long) (end - segN) };
+		return new long[2]{ (long)beg, (long)(end - segN) };
 	}
 
 	else
-		return new long[2] { 0, 0 };
+		return new long[2]{ 0, 0 };
 }
 
-double Line::getDistanceToPnt(double* p, bool sgnd) 
+double Line::getDistanceToPnt(double* p, bool sgnd)
 {
-	if (sgnd) 
+	if (sgnd)
 	{
 		if (!isinf(this->line[0]))
-			return (this->line[0] * p[0] - p[1] + this->line[1]) / sqrt(pow(this->line[0], 2) + 1);
+			return (this->line[0] * p[0] - p[1] + this->line[1]) / sqrt(this->line[0] * this->line[0] + 1.0);
 		else
 			return (p[0] - this->line[1]);
-	} 
-	
-	else 
+	}
+
+	else
 	{
 		if (!isinf(this->line[0]))
-			return abs(this->line[0] * p[0] - p[1] + this->line[1]) / sqrt(pow(this->line[0], 2) + 1);
+			return abs(this->line[0] * p[0] - p[1] + this->line[1]) / sqrt(this->line[0] * this->line[0] + 1.0);
 		else
 			return abs(p[0] - this->line[1]);
 	}
 }
 
-void Line::getProjectionOfPnt(double* p, double** pout) 
+void Line::getProjectionOfPnt(double* p, double** pout)
 {
 	if (!isinf(this->line[0]))
 	{
-		*pout[0] = (p[0] + this->line[0] * p[1] - this->line[0] * this->line[1]) / (pow(this->line[0], 2) + 1.0);
+		*pout[0] = (p[0] + this->line[0] * p[1] - this->line[0] * this->line[1]) / (this->line[0] * this->line[0] + 1.0);
 		*pout[1] = this->line[0] * *pout[0] + this->line[1];
 	}
 	else
@@ -250,13 +250,13 @@ void Line::getProjectionOfPnt(double* p, double** pout)
 	}
 }
 
-void Line::getProjectionOfPntEx(double* p, double** pout, double half_dPhi, bool direction) 
+void Line::getProjectionOfPntEx(double* p, double** pout, double half_dPhi, bool direction)
 {
 	if (!this->isSingle)
 	{
 		if (!isinf(this->line[0]))
 		{
-			*pout[0] = (p[0] + this->line[0] * p[1] - this->line[0] * this->line[1]) / (pow(this->line[0], 2) + 1.0);
+			*pout[0] = (p[0] + this->line[0] * p[1] - this->line[0] * this->line[1]) / (this->line[0] * this->line[0] + 1.0);
 			*pout[1] = this->line[0] * *pout[0] + this->line[1];
 		}
 
@@ -269,7 +269,7 @@ void Line::getProjectionOfPntEx(double* p, double** pout, double half_dPhi, bool
 
 	else
 	{
-		double l = sqrt(pow(p[0], 2) + pow(p[1], 2)) * tan(half_dPhi); // находим точку на линии, отстоящую вправо от точки касания на угол half_dphi
+		double l = sqrt(p[0] * p[0] + p[1] * p[1]) * tan(half_dPhi); // находим точку на линии, отстоящую вправо от точки касания на угол half_dphi
 		double alpha = atan2(p[1], p[0]);  // + pi / 2.0
 		if (direction)
 		{
@@ -285,9 +285,9 @@ void Line::getProjectionOfPntEx(double* p, double** pout, double half_dPhi, bool
 	}
 }
 
-void Line::getIntersection(Line* line, double** pout) 
+void Line::getIntersection(Line* line, double** pout)
 {
-	if (this->line[0] == line->line[0])
+	if (abs(this->line[0] - line->line[0]) < 1e-6)
 	{
 		*pout[0] = INFINITY; //прямые параллельны, в т.ч.и если обе вертикальные
 		*pout[1] = INFINITY;
@@ -315,7 +315,7 @@ void Line::getIntersection(Line* line, double** pout)
 	}
 }
 
-void Line::lol() 
+void Line::lol()
 {
 	cout << this->line[0] << " " << this->line[1] << endl;
 	this->line[0] = 500;

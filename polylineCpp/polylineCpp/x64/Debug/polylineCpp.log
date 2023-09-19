@@ -1,0 +1,16 @@
+﻿  polylineCpp.cpp
+C:\Users\User\Desktop\Слыш работать\YaCu\Progress\Polyline-master\polylineCpp\polylineCpp\polylineCpp.cpp(226,1): warning C4267: аргумент: преобразование из "size_t" в "int"; возможна потеря данных
+C:\Users\User\Desktop\Слыш работать\YaCu\Progress\Polyline-master\polylineCpp\polylineCpp\polylineCpp.cpp(240,1): warning C4267: аргумент: преобразование из "size_t" в "long"; возможна потеря данных
+C:\Users\User\Desktop\Слыш работать\YaCu\Progress\Polyline-master\polylineCpp\polylineCpp\polylineCpp.cpp(246,1): warning C4267: аргумент: преобразование из "size_t" в "int"; возможна потеря данных
+C:\Users\User\Desktop\Слыш работать\YaCu\Progress\Polyline-master\polylineCpp\polylineCpp\polylineCpp.cpp(351,1): warning C4267: аргумент: преобразование из "size_t" в "int"; возможна потеря данных
+C:\Users\User\Desktop\Слыш работать\YaCu\Progress\Polyline-master\polylineCpp\polylineCpp\polylineCpp.cpp(364,1): warning C4267: аргумент: преобразование из "size_t" в "long"; возможна потеря данных
+C:\Users\User\Desktop\Слыш работать\YaCu\Progress\Polyline-master\polylineCpp\polylineCpp\polylineCpp.cpp(370,1): warning C4267: аргумент: преобразование из "size_t" в "int"; возможна потеря данных
+C:\Users\User\Desktop\Слыш работать\YaCu\Progress\Polyline-master\polylineCpp\polylineCpp\polylineCpp.cpp(489,1): warning C4267: аргумент: преобразование из "size_t" в "int"; возможна потеря данных
+C:\Users\User\Desktop\Слыш работать\YaCu\Progress\Polyline-master\polylineCpp\polylineCpp\polylineCpp.cpp(500,1): warning C4267: аргумент: преобразование из "size_t" в "int"; возможна потеря данных
+C:\Users\User\Desktop\Слыш работать\YaCu\Progress\Polyline-master\polylineCpp\polylineCpp\polylineCpp.cpp(561,1): warning C4267: аргумент: преобразование из "size_t" в "int"; возможна потеря данных
+C:\Users\User\Desktop\Слыш работать\YaCu\Progress\Polyline-master\polylineCpp\polylineCpp\polylineCpp.cpp(573,33): warning C4244: =: преобразование "size_t" в "double", возможна потеря данных
+C:\Users\User\Desktop\Слыш работать\YaCu\Progress\Polyline-master\polylineCpp\polylineCpp\polylineCpp.cpp(659,1): warning C4267: аргумент: преобразование из "size_t" в "int"; возможна потеря данных
+C:\Users\User\Desktop\Слыш работать\YaCu\Progress\Polyline-master\polylineCpp\polylineCpp\polylineCpp.cpp(670,1): warning C4267: аргумент: преобразование из "size_t" в "int"; возможна потеря данных
+C:\Users\User\Desktop\Слыш работать\YaCu\Progress\Polyline-master\polylineCpp\polylineCpp\polylineCpp.cpp(729,1): warning C4267: аргумент: преобразование из "size_t" в "int"; возможна потеря данных
+C:\Users\User\Desktop\Слыш работать\YaCu\Progress\Polyline-master\polylineCpp\polylineCpp\polylineCpp.cpp(741,33): warning C4244: =: преобразование "size_t" в "double", возможна потеря данных
+  polylineCpp.vcxproj -> C:\Users\User\Desktop\Слыш работать\YaCu\Progress\Polyline-master\polylineCpp.pyd

@@ -1,0 +1,9 @@
+﻿  polylineCpp.cpp
+D:\Code\Python\AllAboutSLF\polylineCpp\polylineCpp\polylineCpp.cpp(712,44): warning C4101: abs_seg_r_L: неиспользованная локальная переменная
+LINK : warning LNK4075: не учитывается "/INCREMENTAL" из-за спецификации "/LTCG"
+     Создается библиотека D:\Code\Python\AllAboutSLF\polylineCpp\\..\Lidar\polylineCpp.lib и объект D:\Code\Python\AllAboutSLF\polylineCpp\\..\Lidar\polylineCpp.exp
+  Создание кода
+  Previous IPDB not found, fall back to full compilation.
+  All 525 functions were compiled because no usable IPDB/IOBJ from previous compilation was found.
+  Создание кода завершено
+  polylineCpp.vcxproj -> D:\Code\Python\AllAboutSLF\Lidar\polylineCpp.pyd

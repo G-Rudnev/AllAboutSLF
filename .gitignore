@@ -1,0 +1,6 @@
+*.exp
+*.lib
+*.pdb
+*.pyd
+__pycache__/
+RS.py

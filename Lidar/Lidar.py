@@ -18,8 +18,6 @@ from Config import*     #always needed
 
 import lidarVector
 
-import StraightLineFilter as SLF
-
 __all__ = ['Lidar']
 
 class Lidar():
@@ -69,7 +67,7 @@ class Lidar():
         self.phiTo = 180.0 - (float(mainDevicesPars[f"lidarPhiFrom_ID{self.lidarID}"]) - self.mountPhi - self.half_dphi)
         """on this lidar clockwise is positive and 180.0 deg. shifted angle"""
 
-        self.N = round(1.1 * (self.phiTo - self.phiFrom) / (self.half_dphi * 2.0) ) + 40
+        self.N = round(1.1 * (self.phiTo - self.phiFrom) / (self.half_dphi * 2.0) ) + 40 + 6 # 6 - for edge shifting
 
         self.phiFromPositive = True
         if (self.phiFrom < 0.0):
@@ -79,23 +77,19 @@ class Lidar():
             self.phiTo += 360
         
         #PRIVATE
-        self._xy = np.zeros([3, self.N])
+        self._xy = np.zeros([3, self.N], dtype = np.float64)
         self._xy[2, :] = 1.0
-        self._phi = np.zeros([self.N])
-        self._Npnts = np.array([self.N], dtype = np.uint64)
+        self._phi = np.zeros([self.N], dtype = np.float64)
+        self._Npnts = np.array([self.N], dtype = np.int64)
 
-        self._linesXY = np.zeros([3, self.N])
+        self._linesXY = np.zeros([3, self.N], dtype = np.float64)
         self._linesXY[2, :] = 1.0
-        self._Nlines = np.zeros([1], dtype = np.uint64)
-        self._gapsIdxs = np.zeros([self.N], dtype = np.uint64)
-        self._Ngaps = np.zeros([1], dtype = np.uint64)
-
-        #PUBLIC
-        self.linesXY = LinesXY(self.N + 4, closed = True) #4 - is for the base limitting sector
-        self.Nlines = 0
+        self._Nlines = np.zeros([1], dtype = np.int64)
+        self._gapsIdxs = np.zeros([self.N], dtype = np.int64)
+        self._Ngaps = np.zeros([1], dtype = np.int64)
 
         #Cpp extension initialization
-        self._cppPars = (   float(globalPars["half_track"]), float(globalPars["half_length"]), float(globalPars["safety_scale"]), \
+        self._cppPars = (   float(globalPars["half_width"]), float(globalPars["half_length"]), float(globalPars["safetyBox"]) / 100.0, \
                             self.range, self.half_dphi, float(mainDevicesPars[f"lidarRegressionTolerance_ID{self.lidarID}"]), \
                             self.mount)
         """(half_width, half_length, safety, range, half_dphi, tolerance, mount"""
@@ -225,6 +219,7 @@ class Lidar():
                 isRound = False
                 angles0 = angles[0]
                 for i in range(length):
+
                     angles[i] = diffAngle * i + angles0 + AngCorrect(dists[i])
 
                     if (angles[i] > 360.0):
@@ -234,17 +229,17 @@ class Lidar():
                         if (not isRound and n): #возможен пропуск окончания круга, если проход оборота (360 град.) попадает аккурат между пакетами, но такого пока замечено не было
                             #!!!Нужно помнить, что начало круга из-за коррекции угла может весьма ощутимо плавать - до + нескольких градусов к желаемому PhiFrom
 
-                            if (self._xy[0, 0] == 0.0 and self._xy[1, 0] == 0.0):   #лидар отвратительно измеряет углы, если нет дистанции, а нач. и кон. угол очень важны
-                                self._phi[0] = 0.01745329252 * (180.0 - (self.phiFrom - self.mountPhi))
-                            if (self._xy[0, n - 1] == 0.0 and self._xy[1, n - 1] == 0.0):
-                                self._phi[n - 1] = 0.01745329252 * (180.0 - (self.phiTo - self.mountPhi)) # + angleOffset
+                            self.ser.reset_input_buffer()
+
+                            # if (self._xy[0, 0] == 0.0 and self._xy[1, 0] == 0.0):   #лидар отвратительно измеряет углы, если нет дистанции, а нач. и кон. угол очень важны
+                            self._phi[0] = 0.01745329252 * (180.0 - (self.phiFrom - self.mountPhi))
+                            # if (self._xy[0, n - 1] == 0.0 and self._xy[1, n - 1] == 0.0):
+                            self._phi[n - 1] = 0.01745329252 * (180.0 - (self.phiTo - self.mountPhi)) # + angleOffset
 
                             with self._mutex:
-                                # self._Npnts[0] = n
-                                # lidarVector.calcLines(self.cppID)
-                                # lidarVector.synchronize(self.cppID)
-                                self._Nlines[0], self._Ngaps[0] = SLF.getLines(self._linesXY, self._gapsIdxs, self._xy, self._phi, n, \
-                                            self._cppPars[0], self._cppPars[1], self._cppPars[2], self._cppPars[3], self._cppPars[4], self._cppPars[5], self._cppPars[6])
+                                self._Npnts[0] = n
+                                lidarVector.calcLines(self.cppID)
+                                lidarVector.synchronize(self.cppID)
                                 self._frameID += 1
 
                             n = 0
@@ -255,7 +250,7 @@ class Lidar():
 
                         self._phi[n] = 0.01745329252 * (180.0 - (angles[i] - self.mountPhi)) # + angleOffset
 
-                        if (dists[i] > 0.1 and dists[i] < self.range):    #it is the limit of lidar itself
+                        if (dists[i] > 0.02 and dists[i] < self.range):    #it is the limit of lidar itself
                             self._xy[0, n] = dists[i] * cos(self._phi[n])
                             self._xy[1, n] = dists[i] * sin(self._phi[n])
                         else:
@@ -294,12 +289,12 @@ class Lidar():
         print("py releasing")
         lidarVector.release(self.cppID)
 
-    def GetLinesXY(self, pauseIfOld = 0.001):
+    def GetLinesXY(self, linesXY, pauseIfOld = 0.0):
         with self._mutex:
             if not self.ready.is_set():
                 return -1
             if self.frameID != self._frameID:
                 self.frameID = self._frameID
-                return self.linesXY.Fill(self._linesXY, self._gapsIdxs, int(self._Nlines[0]), int(self._Ngaps[0]))
+                return linesXY.Fill(self._linesXY, self._gapsIdxs, int(self._Nlines[0]), int(self._Ngaps[0]))
         time.sleep(pauseIfOld)
         return 0 #the trick is - even if the pointcloud is empty there are 3 elements in linesXY
