@@ -1,5 +1,0 @@
-﻿C:\Program Files (x86)\Microsoft Visual Studio\2019\Community\MSBuild\Microsoft\VC\v160\Microsoft.CppBuild.targets(499,5): warning MSB8004: каталог Output заканчивается не косой чертой.  Этот экземпляр сборки добавит косую черту, поскольку она необходима для правильного определения каталога Output.
-  module.cpp
-C:\Python\Python38\Lib\site-packages\numpy\core\include\numpy\npy_1_7_deprecated_api.h(14): warning Msg: Using deprecated NumPy API, disable it with #define NPY_NO_DEPRECATED_API NPY_1_7_API_VERSION
-     Создается библиотека C:\Python\Python38\DLLs\forLidar.lib и объект C:\Python\Python38\DLLs\forLidar.exp
-  forLidar.vcxproj -> C:\Python\Python38\DLLs\forLidar.pyd

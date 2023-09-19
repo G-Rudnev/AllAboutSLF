@@ -3,4 +3,4 @@
 *.pdb
 *.pyd
 __pycache__/
-RS.py
+.vscode/
