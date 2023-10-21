@@ -9,12 +9,12 @@ import matplotlib.pyplot as plt
 from matplotlib.colors import Normalize
 import threading
 import csv
-from math import sqrt, inf, asin, degrees, cos, sin, pi, tan, isinf, atan2
-'''
-from RoboMath import*   #always needed
-from Config import*     #always needed
-'''
+import sys
+# from math import sqrt, inf, asin, degrees, cos, sin, pi, tan, isinf, atan2
+from RoboMath import *   #always needed
+from Config import *     #always needed
 
+from PointCloudLidarification import *
 import lidarVector
 
 __all__ = ['RealSense']
@@ -114,23 +114,6 @@ class RealSense:
         self._frame_ID = 0   #all captured frames
         self.frame_ID = 0    #the last public (uploaded) frame
 
-        '''
-        #MAIN PARAMETERS
-        self.mount = np.zeros([2])    #local coordinates
-        for i, el in enumerate(mainDevicesPars[f"lidarMount_ID{self.lidarID}"].split()):
-            if i > 1:
-                break
-            self.mount[i] = float(el)
-        self.mountPhi = float(mainDevicesPars[f"lidarMountPhi_ID{self.lidarID}"])
-        self.range = float(mainDevicesPars[f"lidarRange_ID{self.lidarID}"])
-        self.half_dphi = float(mainDevicesPars[f"lidarHalf_dPhi_ID{self.lidarID}"])
-        """in degrees"""
-        self.phiFrom = 180.0 - (float(mainDevicesPars[f"lidarPhiTo_ID{self.lidarID}"]) - self.mountPhi - self.half_dphi)
-        """on this lidar counterclockwise is positive and 180.0 deg. shifted angle"""
-        self.phiTo = 180.0 - (float(mainDevicesPars[f"lidarPhiFrom_ID{self.lidarID}"]) - self.mountPhi - self.half_dphi)
-        """on this lidar clockwise is positive and 180.0 deg. shifted angle"""
-        '''
-
         #LOCKS
         self._thread = []
         self._mutex = threading.RLock()
@@ -146,13 +129,11 @@ class RealSense:
         self._are_points_in_roi = np.zeros([self.__N_cloud_pts], dtype=bool) # flags wether each point is in region of interest (trimming parameters)
         self._N_roi_pts = np.zeros([1], dtype=np.int64)
         self._roi_polar_coords = np.zeros([2, self.__N_cloud_pts], dtype=np.float64)
-        min_dist = 0.5 # RealSense cannot sense depth closer than 0.5 m
-        max_dist = 5.0 # used for left, right, front trimming
-        min_y = -0.7 # used for up trimming (y-axis looks down)
-        max_y = 0.15 # used for doun trimming (y-axis looks down)
-        # y = kz + b trimming
-        self._trimming_pars = (min_dist, max_dist, min_y, max_y) # unchangable
-        
+        self.min_dist = float(mainDevicesPars[f"rs_min_dist_ID{self.RS_ID}"]) # RealSense cannot sense depth closer than 0.5 m
+        self.max_dist = float(mainDevicesPars[f"rs_max_dist_ID{self.RS_ID}"]) # used for left, right, front trimming
+        self.min_y = float(mainDevicesPars[f"rs_min_y_ID{self.RS_ID}"]) # used for up trimming (y-axis looks down)
+        self.max_y = float(mainDevicesPars[f"rs_max_y_ID{self.RS_ID}"]) # used for doun trimming (y-axis looks down)
+        self._trimming_pars = (self.min_dist, self.max_dist, self.min_y, self.max_y) # unchangable        
 
         # PREVECTORIZATION DATA
         self.N = 200
@@ -162,15 +143,20 @@ class RealSense:
         self._Npnts = np.array([self.N], dtype = np.int64)
 
         # VECTORIZATION PARAMETERS
-        half_width = 0.3
-        half_length = 0.57
-        safetyBox = 12
-        dist_range = 5.0
-        half_dphi = 0.3
-        regression_tolerance = 0.1
-        mount = np.zeros([2])
-        self._cppPars = (half_width, half_length, safetyBox / 100.0, dist_range, half_dphi, regression_tolerance, mount)
-        
+        self.half_width = float(globalPars["half_width"])
+        self.half_length = float(globalPars["half_length"])
+        self.safetyBox = float(globalPars["safetyBox"])
+        self.dist_range = float(mainDevicesPars[f"rs_range_ID{self.RS_ID}"])
+        self.half_dphi = float(mainDevicesPars[f"rs_half_dPhi_ID{self.RS_ID}"])
+        self.regression_tolerance = float(mainDevicesPars[f"rs_regression_tolerance_ID{self.RS_ID}"])
+        self.mount = np.zeros([2], dtype=np.float64)
+        for i, el in enumerate(mainDevicesPars[f"rs_mount_ID{self.RS_ID}"].split()):
+            if i > 1:
+                break
+            self.mount[i] = float(el)
+
+        self._cppPars = (self.half_width, self.half_length, self.safetyBox / 100.0, self.dist_range, self.half_dphi, self.regression_tolerance, self.mount)
+
         # OUTPUT DATA
         self._linesXY = np.zeros([3, self.N], dtype=np.float64)
         self._linesXY[2, :] = 1.0
@@ -214,10 +200,8 @@ class RealSense:
             cam.Start = cam._Start_wrp(cam.Start)
             return cam
         except:
-            '''
             if (sys.exc_info()[0] is not RoboException):
-                print(f"Lidar {lidar.lidarID} error! {sys.exc_info()[1]}; line: {sys.exc_info()[2].tb_lineno}")
-            '''
+                print(f"RelSense {cam.RS_ID} error! {sys.exc_info()[1]}; line: {sys.exc_info()[2].tb_lineno}")
             return None
     
     def _Start_wrp(self, f):
@@ -289,134 +273,8 @@ class RealSense:
 
 
 
-
-# =======================================================================
-# ============= POTENTIALLY FOR C++ EXTENSION MODULE PART ===============
-# =======================================================================
-
-# # TODO: verticalization
-# def maintain_verticalization():
-
-# Trimming function # TODO arrays instead of cam object
-def maintain_trimming(primary_points: np.ndarray, are_points_in_roi: np.ndarray, N_roi_pts: np.ndarray, \
-                    min_dist=0.5, max_dist=3.0, min_y=-0.6, max_y=0.6):
-    # Add y = kz + b trimming 
-    xmin, xmax, ymin, ymax, zmin, zmax = -max_dist, max_dist, min_y, max_y, min_dist, max_dist # X - right, Y - down, Z - forward (as camera looks forwards) !!!according to CS of the camera!!!
-    ind1 = np.all(primary_points > np.array([[xmin], [ymin], [zmin]]), axis=0)
-    ind2 = np.all(primary_points < np.array([[xmax], [ymax], [zmax]]), axis=0)
-    # Determination of all the points inside the region of interest
-    are_points_in_roi[:] = np.logical_and(ind1, ind2)[:]
-    N_roi_pts[0] = np.sum(are_points_in_roi)
-
-# # Projection function
-# def maintain_projection(trimmed_points: np.ndarray) -> np.ndarray:
-#     return np.asarray([trimmed_points[2, :], -trimmed_points[0, :]])
-
-# Contouring function
-def maintain_contouring(primary_points: np.ndarray, are_points_in_roi: np.ndarray, \
-                    roi_polar_coords: np.ndarray, N_roi_pts: np.ndarray, \
-                    xy: np.ndarray, phi: np.ndarray, Npnts: np.ndarray):
-    roi_polar_coords[0, :N_roi_pts[0]] = np.arctan2(-primary_points[0, are_points_in_roi], \
-            primary_points[2, are_points_in_roi])[:]
-    roi_polar_coords[1, :N_roi_pts[0]] = np.sqrt(np.power(primary_points[2, are_points_in_roi], 2) + \
-        np.power(primary_points[0, are_points_in_roi], 2))
-    angle_sorted_idxs = np.flip(np.argsort(roi_polar_coords[0, :N_roi_pts[0]]))
-    # For any case when angle-sorted polar frame is needed
-    roi_polar_coords[0, :N_roi_pts[0]] = roi_polar_coords[0, angle_sorted_idxs]
-    roi_polar_coords[1, :N_roi_pts[0]] = roi_polar_coords[1, angle_sorted_idxs]
-    primary_points[::2, :N_roi_pts[0]] = primary_points[::2, are_points_in_roi][:, angle_sorted_idxs]
-    
-
-    # ''' # Line 1 (Y-coordinates) has no informational use now. Thus, it is exploited as a container for 
-    # # polar angles of the projected points which may be extracted via _are_points_in_roi. 
-    # # Minus for line 0 is used according to coordinate system of the camera '''
-    # cam._primary_points[1, cam._are_points_in_roi] = \
-    #     np.arctan2(-cam._primary_points[0, cam._are_points_in_roi], \
-    #         cam._primary_points[2, cam._are_points_in_roi])[:]
-
-    # ''' # Then line 1 (polar angles) is reverse-sorted to transform lines 0 and 2 
-    # (projected points X and Z) to a clockwise sequence when only the points in roi 
-    # (according to _are_points_in_roi) are accessed'''
-    # # cam._primary_points[1, cam._are_points_in_roi] = np.flip(np.sort(cam._primary_points[1, cam._are_points_in_roi]))[:]
-    # # cam._are_points_in_roi[] = np.flip(cam._primary_points[1, cam._are_points_in_roi].argsort())
-    # idxs = np.flip(np.argsort(cam._primary_points[1, cam._are_points_in_roi]))
-    # cam._primary_points[::2, cam._are_points_in_roi] = \
-    #     cam._primary_points[::2, np.flip(np.argsort(cam._primary_points[1, cam._are_points_in_roi]))]
-    # # print(cam._primary_points[1, cam._are_points_in_roi])
-
-
-    # Contouring 
-    # fov_angle = polar_frame[0, 0] - polar_frame[0, -1]
-    angle = np.pi / 4.0
-    delta_ang = 0.5 * np.pi / Npnts[0]
-    cnt_pt_id = 0
-    pt_id = 0
-    slice_width = 0
-
-    # Cyclic sectoral nearest point extraction (clockwise sequence forming)
-    while True:
-        t0 = time.time()
-        while angle > roi_polar_coords[0, pt_id+slice_width] > angle - delta_ang:
-            if pt_id + slice_width < N_roi_pts[0] - 1:
-                slice_width += 1
-            else: 
-                break
-        if slice_width == 0:
-            xy[0, cnt_pt_id] = 0.0
-            xy[1, cnt_pt_id] = 0.0
-            phi[cnt_pt_id] = angle - delta_ang / 2
-        else:
-            min_d_pt_id = np.argmin(roi_polar_coords[1, pt_id:pt_id+slice_width])
-                # np.argmin( \
-                #     np.sqrt( \
-                #         np.dot( \
-                #             cam._primary_points[0, cam._are_points_in_roi][pt_id:pt_id+slice_width], \
-                #                 cam._primary_points[0, cam._are_points_in_roi][pt_id:pt_id+slice_width])))
-                    # np.sqrt( \
-                    #     np.power(\
-                    #         cam._primary_points[0, cam._are_points_in_roi][pt_id:pt_id+slice_width], 2) + \
-                    #             np.power( \
-                    #                 cam._primary_points[2, cam._are_points_in_roi][pt_id:pt_id+slice_width], 2)))
-            
-            xy[0, cnt_pt_id] = primary_points[2, pt_id+min_d_pt_id] # Same 
-            xy[1, cnt_pt_id] = -primary_points[0, pt_id+min_d_pt_id] #     as projection
-            phi[cnt_pt_id] = roi_polar_coords[0, pt_id+min_d_pt_id]
-
-        angle -= delta_ang
-        pt_id += slice_width
-        slice_width = 0
-        cnt_pt_id += 1
-        if cnt_pt_id == Npnts[0]:
-            break
-
-        # print(time.time() - t0, '\n')
-
-
-
-# Full processing: verticalization, trimming, horizontal projection, contour extraction
-def process_point_cloud(primary_points: np.ndarray, are_points_in_roi: np.ndarray, \
-                    roi_polar_coords: np.ndarray, N_roi_pts: np.ndarray, \
-                    xy: np.ndarray, phi: np.ndarray, Npnts: np.ndarray, \
-                    min_dist=0.5, max_dist=3.0, min_y=-0.6, max_y=0.6):
-    t0 = time.time()
-    # Assuming raw points are always vertically aligned:
-    maintain_trimming(primary_points, are_points_in_roi, N_roi_pts, \
-                    min_dist=0.5, max_dist=max_dist, min_y=min_y, max_y=max_y)
-    maintain_contouring(primary_points, are_points_in_roi, \
-                    roi_polar_coords, N_roi_pts, \
-                    xy, phi, Npnts)
-
-    # print(time.time() - t0)
-
-
-
-# =======================================================================
-# ================== END OF CALCULATION FUNCTIONS =======================
-# =======================================================================
-
-
 def plot_output(cam):
-    # For visualization and visual sensor data collection
+
     if cam._is_visual:
         for ln in cam.ax:
             for cl in ln:
@@ -486,7 +344,7 @@ def main():
     # cam = RealSense() # depth + rgb mode initialization
     RS_ID = 0
     vis = False
-    do_plot = False
+    do_plot = True
     cam0 = RealSense.Create(RS_ID, vis=vis, do_plot=do_plot)
 
     cam0.Start()
