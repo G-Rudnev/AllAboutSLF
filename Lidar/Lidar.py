@@ -63,7 +63,7 @@ class Lidar():
         self.half_dphi = float(mainDevicesPars[f"lidarHalf_dPhi_ID{self.lidarID}"])
         """in degrees"""
         self.phiFrom = 180.0 - (float(mainDevicesPars[f"lidarPhiTo_ID{self.lidarID}"]) - self.mountPhi - self.half_dphi)
-        """on this lidar counterclockwise is positive and 180.0 deg. shifted angle"""
+        """on this lidar clockwise is positive and 180.0 deg. shifted angle"""
         self.phiTo = 180.0 - (float(mainDevicesPars[f"lidarPhiFrom_ID{self.lidarID}"]) - self.mountPhi - self.half_dphi)
         """on this lidar clockwise is positive and 180.0 deg. shifted angle"""
 
