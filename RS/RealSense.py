@@ -1,16 +1,11 @@
-
 import pyrealsense2 as rs
 import numpy as np
 from numpy.linalg import norm
-import cv2
-import open3d
 import time
 import matplotlib.pyplot as plt
 from matplotlib.colors import Normalize
 import threading
-import csv
 import sys
-# from math import sqrt, inf, asin, degrees, cos, sin, pi, tan, isinf, atan2
 from RoboMath import *   #always needed
 from Config import *     #always needed
 
@@ -60,7 +55,6 @@ class RealSense:
             print("Check mode")
             cam.__sensors_mode = 4
 
-
     def __init__(self, rnd_key, RS_ID, vis=False, do_plot=False, sensors_mode=4):
         "Use create function only!!!"
 
@@ -95,24 +89,20 @@ class RealSense:
 
                 else:
                     self.ax = self.fig.add_subplot(111)
-                    self.ax.set_aspect('equal')
         self._point_cloud = rs.pointcloud()
         self._filter = rs.decimation_filter()
 
         # VISUAL DATA
-        self._color_image = np.zeros([720, 1280, 3], dtype=np.uint8)# color image (resolution considered shape)
-        self._depth_image = np.zeros([720, 1280], dtype=np.uint16)# depth image (internally fixed? shape)
-        # self._images = np.asanyarray([self._color_image, self._depth_image])
-
-        # TODO
-        # self._ts # timestamp for frames (if needed)
+        if self._is_visual:
+            self._color_image = np.zeros([720, 1280, 3], dtype=np.uint8)# color image (resolution considered shape)
+            self._depth_image = np.zeros([720, 1280], dtype=np.uint16)# depth image (internally fixed? shape)
+            # self._images = np.asanyarray([self._color_image, self._depth_image])
 
         #IDs
         self.RS_ID = RS_ID
-        # self.RS_SN = mainDevicesPars[f"lidarSN_ID{self.lidarID}"]
         RealSense._N_of_RS += 1
-        self._frame_ID = 0   #all captured frames
-        self.frame_ID = 0    #the last public (uploaded) frame
+        self.timestamp = 0   # last captured public timestamp
+        self._composite_frame = [] # last public composite frame
 
         #LOCKS
         self._thread = []
@@ -121,8 +111,8 @@ class RealSense:
         #EVENTS AND HANDLES
         self.ready = threading.Event()
         self.ready.clear()
-        self._is_free = threading.Event()
-        self._is_free.set()
+        self._isFree = threading.Event()
+        self._isFree.set()
 
         # PRIMARY DATA (POINT CLOUD PROCESSING - CONTOURING)
         self._primary_points = np.zeros([3, self.__N_cloud_pts], dtype=np.float64) # raw Cartesian coordinates
@@ -177,7 +167,19 @@ class RealSense:
 
         try:
             if self.__sensors_mode == 4:
-                self._composite_frame = self.__pipeline.wait_for_frames()
+                if first:
+                    self._composite_frame = self.__pipeline.wait_for_frames(timeout_ms=1000)
+                else:
+                    t0 = time.time()
+                    while True:
+                        self._composite_frame = self.__pipeline.poll_for_frames()
+                        if not self._composite_frame:
+                            if time.time() - t0 > 0.5:
+                                raise Exception('Frame delivery timeout. Check RealSense connection.')
+                            time.sleep(0.1)
+                        else:
+                            break
+
                 if self._composite_frame.get_depth_frame().height == 720 and self._composite_frame.get_depth_frame().width == 1280:
                     self._primary_points[:, :] = \
                         np.asarray(self._point_cloud.calculate(self._filter.process(self._composite_frame.get_depth_frame())).get_vertices(dims=2), dtype=np.float64).T[:, :] # To NumPy array xyz coords (3x230400)
@@ -188,9 +190,9 @@ class RealSense:
 
         # TODO: make an exception handler
         except Exception as e:
-            print(e) # Here if RS is disconnected stop function is automatic. But the following is necessary to reconnect
-            self.Stop(False) # means man_stop = False, means it's not a manually caused stop (= RS has problems)
-            self.Start() # go to restart
+            print('Extraction error:', e)
+            if self.ready.is_set():
+                self.Stop(False) # means man_stop = False, means it's not a manually caused stop (= RS has problems)
 
 
     @classmethod
@@ -201,176 +203,97 @@ class RealSense:
             return cam
         except:
             if (sys.exc_info()[0] is not RoboException):
-                print(f"RelSense {cam.RS_ID} error! {sys.exc_info()[1]}; line: {sys.exc_info()[2].tb_lineno}")
+                print(f"RealSense {cam.RS_ID} error! {sys.exc_info()[1]}; line: {sys.exc_info()[2].tb_lineno}")
             return None
     
     def _Start_wrp(self, f):
-            def func(*args, **kwargs):
-                if (self._is_free.wait(timeout = 0.5)):  #for the case of delayed stopping
-                    self._thread = threading.Thread(target=f, args=args, kwargs=kwargs)
-                    self._thread.start()
-                    while self._thread.is_alive() and not self.ready.is_set():
-                        time.sleep(0.01)
-                    if self.ready.is_set():
-                        time.sleep(0.5) # RealSense requires some time too
-                return self.ready.is_set()
-            return func
+        def func(*args, **kwargs):
+            if (self._isFree.wait(timeout = 0.5)):  #for the case of delayed stopping
+                self._thread = threading.Thread(target=f, args=args, kwargs=kwargs)
+                self._thread.start()
+                while self._thread.is_alive() and not self.ready.is_set():
+                    time.sleep(0.01)
+            return self.ready.is_set()
+        return func
 
     
     def Start(self):
+        print('RealSense', self.RS_ID, 'thread started')
         print('Waiting for RealSense to start')
-
+        self._isFree.clear()
         '''Search for camera plugged in is provided as internal functionality in pyrealsense (Windows at least)
         pyrealsense has time delay for nearly 15 seconds when RS is not connected before it raises an Esception
         during this time RS can be connected and start streaming without pain'''
-        while not self.__profile:
-            try:
-                # Start streaming
-                self.__profile = self.__pipeline.start(self.__config)
-            except Exception as e:
-                print('RealSense exception:', e, '. \nCheck RealSense connection')
-            else:
-                print("RealSense detected")
-                # time.sleep(1.5) # Time (approximately) for RS to start collecting data
-                
+        try:
+            self.__profile = self.__pipeline.start(self.__config)
+        except Exception as e:
+            self.ready.clear()
+            self._isFree.set()
+            print('RealSense', self.RS_ID, 'thread finished')
+            return
+        else:
+            print("RealSense detected")
+
         self.ready.set()
+        self._extract_sensors_data(first=True) # required for the first after RS launch frame extraction 
         while (self.ready.is_set() and threading.main_thread().is_alive()):
-            t0 = time.time()
+            if not self.__profile:
+                return
             self._extract_sensors_data() # Collecting data from different sensor and saving
             # print('Data extraction time:', time.time() - t0)
-
-            process_point_cloud(self._primary_points, self._are_points_in_roi, \
+            with self._mutex:
+                t0 = time.time()
+                process_point_cloud(self._primary_points, self._are_points_in_roi, \
                     self._roi_polar_coords, self._N_roi_pts, \
                     self._xy, self._phi, self._Npnts, *self._trimming_pars) # Y axis looks down
-
-            lidarVector.calcLines(self.cppID)
-            lidarVector.synchronize(self.cppID)
+                lidarVector.calcLines(self.cppID)
+                lidarVector.synchronize(self.cppID)
             print('Time:', time.time() - t0, 'N ROI points:', self._N_roi_pts[0], 'N output lines', self._Nlines[0])
 
-            if self._do_plot:
-                plot_output(self)
+        self.ready.clear()
+        self._isFree.set()
+        print('RealSense', self.RS_ID, 'thread finished.')
 
 
     def Stop(self, man_stop=True):
         ''' RealSense can be stopped in two ways:
-        1. Manually, which means we commant it to stop
+        1. Manually, which means we command it to stop
         2. Internally by pyrealsense when exceptions are raised
         Both these ways require reinitialization of internal configurations (pipeline, config, profile, etc)'''
-        print('Internal RealSense stop')
-        if man_stop: # this is used to differentiate manual stop from internal staop caused by pyRS. If it is manual - stop pipeline, 
-            self.__pipeline.stop() # # if internal - it's already stopped and this line will cause a crush
-            print('Manual RealSense stop')
+        if man_stop: # this is used to differentiate manual stop from internal staop caused by pyRS. If it is manual - stop pipeline,
+            try: 
+                self.__pipeline.stop() # # if internal - it's already stopped and this line will cause a crush
+                print('RealSense manual stop')
+            except:
+                pass
+        else:
+            print('Realsense internal stop')
+        self._isFree.set()
         self.ready.clear()
         # Necessary part for internal RS reinitialization
         self.__pipeline = rs.pipeline()
         self.__config = rs.config()
         self.__profile = None
         RealSense.__internal_init(self) # NECESSARY
-        self.Start()
         
+
     def Release(self):
         print('Py releasing')
         lidarVector.release(self.cppID)
 
 
-
-def plot_output(cam):
-
-    if cam._is_visual:
-        for ln in cam.ax:
-            for cl in ln:
-                cl.clear()
-
-        cam.ax[0][0].imshow(cam._color_image)
-        cam.ax[0][1].imshow(cam._depth_image, cmap='jet', norm=Normalize(0, 65535 * 0.075))
-
-        for a in cam.ax[1]:
-            a.scatter(0, 0, s=10, c='black')
-
-        # ax[1, 0].scatter(angle_sorted_projected_points[0, :], angle_sorted_projected_points[1, :], s=1, color='gray')
-        cam.ax[1][1].scatter(cam._xy[0, :], cam._xy[1, :], s=1, color='gray')
-
-        # Рисование ломаной
-
-        linewidth = 1.5
-        v = 0
-        while v < cam._Nlines[0]:
-            
-            u = v
-
-            while (v < cam._Nlines[0] and (abs(cam._linesXY[0, v]) > 1e-5 or abs(cam._linesXY[1, v]) > 1e-5)):
-                v += 1
-
-            if (v > u + 1):
-                cam.ax[1][1].plot(cam._linesXY[0, u : v], cam._linesXY[1, u : v], linewidth = linewidth, color = 'red')
-
-            if (v < cam._Nlines[0] - 1): 
-                if (cam._linesXY[0, v] != 0.0 and cam._linesXY[1, v] != 0.0):
-                    cam.ax[1][1].plot([cam._linesXY[0, v - 1], cam._linesXY[0, v + 1]], [cam._linesXY[1, v - 1], cam._linesXY[1, v + 1]], color = 'black', linewidth = linewidth)
+    def GetLinesXY(self, linesXY, pauseIfOld=0.0):
+        with self._mutex:
+            if not self.ready.is_set():
+                return -1
+            if self._composite_frame:
+                if self.timestamp != self._composite_frame.timestamp:
+                    self.timestamp = self._composite_frame.timestamp
+                    return linesXY.Fill(self._linesXY, self._gapsIdxs, int(self._Nlines[0]), int(self._Ngaps[0]))
             else:
-                cam.ax[1][1].plot([cam._linesXY[0, cam._Nlines[0] - 1], cam._linesXY[0, 0]], [cam._linesXY[1, cam._Nlines[0] - 1], cam._linesXY[1, 0]], color = 'red', linewidth = linewidth)
-
-            v += 1
-
-    else:
-        cam.ax.clear()
-
-        cam.ax.scatter(0, 0, s=10, c='black')
-        cam.ax.scatter(cam._xy[0, :], cam._xy[1, :], s=1, color='gray')
-
-        # Рисование ломаной
-        linewidth = 1.5
-        v = 0
-        while v < cam._Nlines[0]:
-            
-            u = v
-
-            while (v < cam._Nlines[0] and (abs(cam._linesXY[0, v]) > 1e-5 or abs(cam._linesXY[1, v]) > 1e-5)):
-                v += 1
-            if (v > u + 1):
-                cam.ax.plot(cam._linesXY[0, u : v], cam._linesXY[1, u : v], linewidth = linewidth, color = 'red')
-
-            if (v < cam._Nlines[0] - 1): 
-                if (cam._linesXY[0, v] != 0.0 and cam._linesXY[1, v] != 0.0):
-                    cam.ax.plot([cam._linesXY[0, v - 1], cam._linesXY[0, v + 1]], [cam._linesXY[1, v - 1], cam._linesXY[1, v + 1]], color = 'black', linewidth = linewidth)
-            else:
-                cam.ax.plot([cam._linesXY[0, cam._Nlines[0] - 1], cam._linesXY[0, 0]], [cam._linesXY[1, cam._Nlines[0] - 1], cam._linesXY[1, 0]], color = 'red', linewidth = linewidth)
-
-            v += 1
-
-    cam.fig.canvas.draw_idle()
-
-
-def main():
-    # cam = RealSense() # depth + rgb mode initialization
-    RS_ID = 0
-    vis = False
-    do_plot = True
-    cam0 = RealSense.Create(RS_ID, vis=vis, do_plot=do_plot)
-
-    cam0.Start()
-
-    if cam0._do_plot:
-        plt.show()
-    else:
-        t = time.time()
-        while True:
-            # if time.time() - t > 5:
-            #     cam0.Stop(True) # Manual stop testing
-            time.sleep(0.9)
-    
-    exit()
-
-
-
-if __name__ == '__main__':
-    main()
-
-
-
-
-
-
+                return -1
+        time.sleep(pauseIfOld)
+        return 0 #the trick is - even if the pointcloud is empty there are 3 elements in linesXY
 
 
 
