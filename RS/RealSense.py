@@ -102,7 +102,8 @@ class RealSense:
         self.RS_ID = RS_ID
         RealSense._N_of_RS += 1
         self.timestamp = 0   # last captured public timestamp
-        self._composite_frame = [] # last public composite frame
+        self.composite_frame = [] # last public composite frame
+        self._composite_frame = [] # last got composite frame
 
         #LOCKS
         self._thread = []
@@ -168,7 +169,16 @@ class RealSense:
         try:
             if self.__sensors_mode == 4:
                 if first:
-                    self._composite_frame = self.__pipeline.wait_for_frames(timeout_ms=1000)
+                    # self._composite_frame = self.__pipeline.wait_for_frames(timeout_ms=1000)
+                    t0 = time.time()
+                    while True:
+                        self._composite_frame = self.__pipeline.poll_for_frames()
+                        if not self._composite_frame:
+                            if time.time() - t0 > 2.0:
+                                raise Exception('Initial frame delivery timeout. Check RealSense connection.')
+                            time.sleep(0.001)
+                        else:
+                            break
                 else:
                     t0 = time.time()
                     while True:
@@ -176,7 +186,7 @@ class RealSense:
                         if not self._composite_frame:
                             if time.time() - t0 > 0.5:
                                 raise Exception('Frame delivery timeout. Check RealSense connection.')
-                            time.sleep(0.1)
+                            time.sleep(0.001)
                         else:
                             break
 
@@ -187,6 +197,8 @@ class RealSense:
                 if self._is_visual:
                     self._color_image[:,:,:] = np.asanyarray(self._composite_frame.get_color_frame().get_data())[:,:,:]
                     self._depth_image[:,:] = np.asanyarray(self._composite_frame.get_depth_frame().get_data())[:,:]
+
+                self.composite_frame = self._composite_frame
 
         # TODO: make an exception handler
         except Exception as e:
@@ -260,14 +272,19 @@ class RealSense:
         1. Manually, which means we command it to stop
         2. Internally by pyrealsense when exceptions are raised
         Both these ways require reinitialization of internal configurations (pipeline, config, profile, etc)'''
-        if man_stop: # this is used to differentiate manual stop from internal staop caused by pyRS. If it is manual - stop pipeline,
-            try: 
-                self.__pipeline.stop() # # if internal - it's already stopped and this line will cause a crush
-                print('RealSense manual stop')
-            except:
-                pass
-        else:
-            print('Realsense internal stop')
+        # if man_stop: # this is used to differentiate manual stop from internal staop caused by pyRS. If it is manual - stop pipeline,
+        #     try: 
+        #         self.__pipeline.stop() # # if internal - it's already stopped and this line will cause a crush
+        #         print('RealSense manual stop')
+        #     except:
+        #         pass
+        # else:
+        #     print('Realsense internal stop')
+        try: 
+            self.__pipeline.stop() # # if internal - it's already stopped and this line will cause a crush
+            # print('RealSense manual stop')
+        except:
+            pass
         self._isFree.set()
         self.ready.clear()
         # Necessary part for internal RS reinitialization
@@ -286,9 +303,9 @@ class RealSense:
         with self._mutex:
             if not self.ready.is_set():
                 return -1
-            if self._composite_frame:
-                if self.timestamp != self._composite_frame.timestamp:
-                    self.timestamp = self._composite_frame.timestamp
+            if self.composite_frame:
+                if self.timestamp != self.composite_frame.timestamp:
+                    self.timestamp = self.composite_frame.timestamp
                     return linesXY.Fill(self._linesXY, self._gapsIdxs, int(self._Nlines[0]), int(self._Ngaps[0]))
             else:
                 return -1
